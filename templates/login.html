@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="classic-royal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MediLink – Đăng nhập cổng bệnh nhân hoặc cổng nhân viên y tế">
+  <title>MediLink | <span class="lang-vi">Đăng nhập</span><span class="lang-en">Sign in</span></title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="theme-classic-royal login-page">
+
+  <!-- ============================================================
+       A. BRAND HEADER (compact top bar)
+       ============================================================ -->
+  <header class="login-header">
+    <div class="container login-header__inner">
+      <a href="{{ url_for('index') }}" class="login-header__brand">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="MediLink"
+             width="140" height="40"
+             loading="eager">
+        <span class="login-header__tagline">
+          <span class="lang-vi">Kết nối chăm sóc sức khỏe an toàn</span>
+          <span class="lang-en">Secure healthcare connection</span>
+        </span>
+      </a>
+
+      <div class="login-header__controls">
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" class="lang-btn active" data-lang="vi" aria-pressed="true">VI</button>
+          <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" class="theme-btn active" data-theme="classic-royal" title="Classic Royal">
+            <span class="lang-vi">Cổ điển</span>
+            <span class="lang-en">Classic</span>
+          </button>
+          <button type="button" class="theme-btn" data-theme="cyber-heritage" title="Cyber Heritage">
+            <span class="lang-vi">Hiện đại</span>
+            <span class="lang-en">Cyber</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="login-main">
+    <div class="container login-layout">
+
+      <!-- ============================================================
+           B. WELCOME PANEL (left)
+           ============================================================ -->
+      <section class="login-welcome" aria-labelledby="welcome-heading">
+        <h1 id="welcome-heading" class="login-welcome__title">
+          <span class="lang-vi">Chào mừng đến với MediLink</span>
+          <span class="lang-en">Welcome to MediLink</span>
+        </h1>
+        <p class="login-welcome__text">
+          <span class="lang-vi">MediLink hỗ trợ quản lý thông tin y tế và điều phối chia sẻ tài liệu y tế một cách an toàn, minh bạch và dựa trên đồng thuận.</span>
+          <span class="lang-en">MediLink helps manage healthcare information and coordinate secure, transparent, consent-based medical document sharing.</span>
+        </p>
+
+        <ul class="login-trust-list">
+          <li>
+            <span class="lang-vi">Truy cập thông tin y tế được bảo vệ</span>
+            <span class="lang-en">Secure access to medical information</span>
+          </li>
+          <li>
+            <span class="lang-vi">Chia sẻ dựa trên đồng thuận rõ ràng</span>
+            <span class="lang-en">Consent-based sharing</span>
+          </li>
+          <li>
+            <span class="lang-vi">Hỗ trợ quy trình y tế số (hồ sơ, chuyển tuyến, bàn giao SBAR)</span>
+            <span class="lang-en">Support for digital healthcare workflows (records, referrals, SBAR handover)</span>
+          </li>
+        </ul>
+
+        <p class="login-welcome__note">
+          <span class="lang-vi">Đây là dự án prototype. Không phải hệ thống bệnh viện chính thức.</span>
+          <span class="lang-en">This is a prototype project. Not an official hospital system.</span>
+        </p>
+      </section>
+
+      <!-- ============================================================
+           C. LOGIN CARD (right)
+           ============================================================ -->
+      <section class="login-card-section" aria-labelledby="login-card-heading">
+        <div class="card login-card">
+          <h2 id="login-card-heading" class="login-card__title">
+            <span class="lang-vi">Đăng nhập</span>
+            <span class="lang-en">Sign in</span>
+          </h2>
+
+          <!-- Mode selector (accessible tabs) -->
+          <div class="login-mode-selector" role="tablist" aria-label="Login mode">
+            <button type="button"
+                    class="login-mode-btn active"
+                    role="tab"
+                    id="tab-patient"
+                    aria-selected="true"
+                    aria-controls="panel-patient"
+                    data-mode="patient">
+              <img src="{{ url_for('static', filename='images/patient.png') }}"
+                   alt=""
+                   width="40" height="40"
+                   class="login-mode-btn__icon"
+                   loading="lazy">
+              <span class="login-mode-btn__label">
+                <span class="lang-vi">Người bệnh</span>
+                <span class="lang-en">Patient</span>
+              </span>
+            </button>
+
+            <button type="button"
+                    class="login-mode-btn"
+                    role="tab"
+                    id="tab-staff"
+                    aria-selected="false"
+                    aria-controls="panel-staff"
+                    data-mode="staff">
+              <img src="{{ url_for('static', filename='images/docter.png') }}"
+                   alt=""
+                   width="40" height="40"
+                   class="login-mode-btn__icon"
+                   loading="lazy">
+              <span class="login-mode-btn__label">
+                <span class="lang-vi">Nhân viên y tế</span>
+                <span class="lang-en">Healthcare Staff</span>
+              </span>
+            </button>
+          </div>
+
+          <!-- Global flash / server messages -->
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              <div class="flash-messages" role="alert">
+                {% for category, message in messages %}
+                  <p class="flash-msg flash-msg--{{ category }}">{{ message }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
+
+          <!-- ============================================================
+               5. PATIENT LOGIN FORM
+               ============================================================ -->
+          <div id="panel-patient"
+               class="login-panel active"
+               role="tabpanel"
+               aria-labelledby="tab-patient">
+            <p class="login-panel__desc">
+              <span class="lang-vi">Truy cập hồ sơ y tế, tài liệu chuyển tuyến và quản lý đồng thuận.</span>
+              <span class="lang-en">Access medical records, referral documents and consent management.</span>
+            </p>
+
+            <form id="form-patient"
+                  class="login-form"
+                  method="POST"
+                  action="{{ url_for('login') }}"
+                  novalidate>
+              <input type="hidden" name="login_type" value="patient">
+              {% if csrf_token is defined %}
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+
+              <div class="form-group">
+                <label for="patient-identifier">
+                  <span class="lang-vi">Số điện thoại hoặc mã demo</span>
+                  <span class="lang-en">Phone number or demo ID</span>
+                </label>
+                <input type="text"
+                       id="patient-identifier"
+                       name="identifier"
+                       autocomplete="username"
+                       maxlength="40"
+                       required
+                       aria-describedby="patient-identifier-hint patient-identifier-error">
+                <p id="patient-identifier-hint" class="form-hint">
+                  <span class="lang-vi">Chỉ dùng tài khoản demo được cung cấp. Không nhập CCCD thật.</span>
+                  <span class="lang-en">Use only the supplied demo account. Do not enter a real citizen ID.</span>
+                </p>
+                <p id="patient-identifier-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="form-group">
+                <label for="patient-password">
+                  <span class="lang-vi">Mật khẩu</span>
+                  <span class="lang-en">Password</span>
+                </label>
+                <div class="password-wrap">
+                  <input type="password"
+                         id="patient-password"
+                         name="password"
+                         autocomplete="current-password"
+                         maxlength="128"
+                         required
+                         aria-describedby="patient-password-error">
+                  <button type="button"
+                          class="btn-toggle-password"
+                          data-target="patient-password"
+                          aria-label="Show password">
+                    <span class="lang-vi">Hiện</span>
+                    <span class="lang-en">Show</span>
+                  </button>
+                </div>
+                <p id="patient-password-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-block" id="btn-patient-submit">
+                  <span class="lang-vi">Đăng nhập người bệnh</span>
+                  <span class="lang-en">Patient sign in</span>
+                </button>
+              </div>
+
+              <p class="login-demo-note">
+                <span class="lang-vi">Luồng demo – backend phải xác thực trước khi chuyển hướng.</span>
+                <span class="lang-en">Demo flow – backend must authenticate before any redirect.</span>
+              </p>
+            </form>
+          </div>
+
+          <!-- ============================================================
+               6. HEALTHCARE STAFF LOGIN FORM
+               ============================================================ -->
+          <div id="panel-staff"
+               class="login-panel"
+               role="tabpanel"
+               aria-labelledby="tab-staff"
+               hidden>
+            <p class="login-panel__desc">
+              <span class="lang-vi">Truy cập được ủy quyền: hồ sơ số, bàn giao ca SBAR và điều phối chuyển tuyến.</span>
+              <span class="lang-en">Authorized access: digital packets, SBAR handover and referral coordination.</span>
+            </p>
+
+            <form id="form-staff"
+                  class="login-form"
+                  method="POST"
+                  action="{{ url_for('login') }}"
+                  novalidate>
+              <input type="hidden" name="login_type" value="staff">
+              {% if csrf_token is defined %}
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+
+              <div class="form-group">
+                <label for="staff-identifier">
+                  <span class="lang-vi">Mã nhân viên / Tài khoản</span>
+                  <span class="lang-en">Staff ID / Account</span>
+                </label>
+                <input type="text"
+                       id="staff-identifier"
+                       name="identifier"
+                       autocomplete="username"
+                       maxlength="40"
+                       required
+                       aria-describedby="staff-identifier-error">
+                <p id="staff-identifier-error" class="field-error" hidden></p>
+              </div>
+
+              <form id="form-staff" class="login-form" method="POST" action="{{ url_for('login') }}" novalidate>
+  <!-- Bắt buộc phải có trường ẩn này để backend phân biệt loại đăng nhập -->
+  <input type="hidden" name="login_type" value="staff">
+
+  <div class="form-group">
+    <label for="staff-identifier">
+      <span class="lang-vi">Mã nhân viên / Tài khoản</span>
+      <span class="lang-en">Staff ID / Account</span>
+    </label>
+    <!-- Bắt buộc phải có name="identifier" -->
+    <input type="text" id="staff-identifier" name="identifier" required>
+  </div>
+
+  <!-- Phần nhập mật khẩu và chọn role mà bạn vừa gửi nằm ở đây -->
+  <div class="form-group">
+    <label for="staff-password">...</label>
+    <div class="password-wrap">
+      <input type="password" id="staff-password" name="password" required>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="staff-role">...</label>
+    <select id="staff-role" name="role">...</select>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary btn-block" id="btn-staff-submit">
+      <span class="lang-vi">Đăng nhập nhân viên</span>
+      <span class="lang-en">Staff sign in</span>
+    </button>
+  </div>
+</form>
+
+              <div class="form-group">
+                <label for="staff-role">
+                  <span class="lang-vi">Vai trò (tùy chọn – backend vẫn phải xác thực)</span>
+                  <span class="lang-en">Role (optional – backend must still validate)</span>
+                </label>
+                <select id="staff-role" name="role">
+                  <option value="">
+                    <span class="lang-vi">— Không chọn —</span>
+                    <span class="lang-en">— None —</span>
+                  </option>
+                  <option value="shift-lead">
+                    <span class="lang-vi">Bác sĩ trưởng ca</span>
+                    <span class="lang-en">Shift-leading physician</span>
+                  </option>
+                  <option value="treating">
+                    <span class="lang-vi">Bác sĩ điều trị</span>
+                    <span class="lang-en">Treating physician</span>
+                  </option>
+                  <option value="nurse">
+                    <span class="lang-vi">Điều dưỡng</span>
+                    <span class="lang-en">Nurse</span>
+                  </option>
+                  <option value="referral">
+                    <span class="lang-vi">Nhân viên chuyển tuyến</span>
+                    <span class="lang-en">Authorized referral staff</span>
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-block" id="btn-staff-submit">
+                  <span class="lang-vi">Đăng nhập nhân viên</span>
+                  <span class="lang-en">Staff sign in</span>
+                </button>
+              </div>
+
+              <p class="login-demo-note">
+                <span class="lang-vi">Luồng demo – backend phải xác thực quyền trước khi vào cổng nhân viên.</span>
+                <span class="lang-en">Demo flow – backend must validate authorization before hospital portal access.</span>
+              </p>
+            </form>
+          </div>
+
+          <!-- Loading / pending state (shown by JS while submitting) -->
+          <div id="login-pending" class="login-pending" hidden role="status" aria-live="polite">
+            <p>
+              <span class="lang-vi">Đang xác thực…</span>
+              <span class="lang-en">Authenticating…</span>
+            </p>
+          </div>
+        </div>
+
+        <p class="login-footer-links">
+          <a href="{{ url_for('index') }}">
+            <span class="lang-vi">← Cổng bệnh nhân (công khai)</span>
+            <span class="lang-en">← Patient portal (public)</span>
+          </a>
+          <span class="sep">·</span>
+          <a href="{{ url_for('hospital') }}">
+            <span class="lang-vi">Cổng nhân viên y tế</span>
+            <span class="lang-en">Healthcare staff portal</span>
+          </a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="login-page-footer">
+    <div class="container">
+      <p class="footer-disclaimer">
+        <span class="lang-vi">MediLink là prototype. Không thu thập CCCD thật. Không lưu mật khẩu trên trình duyệt. Mọi xác thực phải do backend thực hiện.</span>
+        <span class="lang-en">MediLink is a prototype. Do not collect real citizen IDs. Passwords are never stored in the browser. All authentication must be performed by the backend.</span>
+      </p>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

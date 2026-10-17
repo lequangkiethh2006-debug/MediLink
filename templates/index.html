@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="classic-royal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MediLink – Cổng thông tin y tế số, điều phối chuyển tuyến thông minh và minh bạch quyền truy cập dữ liệu">
+  <title>MediLink | <span class="lang-vi">Cổng bệnh nhân</span><span class="lang-en">Patient Portal</span></title>
+
+  <!-- Fonts: Merriweather (headings) + Plus Jakarta Sans (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="theme-classic-royal">
+
+  <!-- ============================================================
+       A. TOP INFORMATION BAR
+       ============================================================ -->
+  <div class="top-bar" role="banner">
+    <div class="container top-bar__inner">
+      <div class="top-bar__brand">
+        <span class="top-bar__hotline">
+          <span class="lang-vi">Hotline hỗ trợ: 1900-XXXX</span>
+          <span class="lang-en">Support hotline: 1900-XXXX</span>
+        </span>
+        <span class="top-bar__portal-badge">
+          <span class="lang-vi">Cổng bệnh nhân</span>
+          <span class="lang-en">Patient Portal</span>
+        </span>
+      </div>
+
+      <div class="top-bar__actions">
+        <!-- Staff portal – uses route that should exist in app.py (adjust if different) -->
+        <a href="{{ url_for('hospital') }}" class="btn-text top-bar__staff-link" id="staff-portal-link">
+          <span class="lang-vi">Cổng nhân viên y tế</span>
+          <span class="lang-en">Healthcare Staff Portal</span>
+        </a>
+
+        <!-- Language switch -->
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" class="lang-btn active" data-lang="vi" aria-pressed="true">VI</button>
+          <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+
+        <!-- Theme selector -->
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" class="theme-btn active" data-theme="classic-royal" title="Classic Royal">
+            <span class="lang-vi">Cổ điển</span>
+            <span class="lang-en">Classic</span>
+          </button>
+          <button type="button" class="theme-btn" data-theme="cyber-heritage" title="Cyber Heritage">
+            <span class="lang-vi">Hiện đại</span>
+            <span class="lang-en">Cyber</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       B. MAIN NAVIGATION
+       ============================================================ -->
+  <header class="main-header">
+    <nav class="main-nav container" aria-label="Main navigation">
+      <a href="{{ url_for('index') }}" class="nav-logo">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="MediLink Logo"
+             width="160" height="48"
+             loading="eager">
+      </a>
+
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Toggle menu">
+        <span class="nav-toggle__bar"></span>
+        <span class="nav-toggle__bar"></span>
+        <span class="nav-toggle__bar"></span>
+      </button>
+
+      <ul class="nav-menu" id="nav-menu">
+        <li><a href="{{ url_for('index') }}" class="nav-link active">
+          <span class="lang-vi">Trang chủ</span>
+          <span class="lang-en">Home</span>
+        </a></li>
+        <li><a href="#medical-records" class="nav-link">
+          <span class="lang-vi">Hồ sơ y tế</span>
+          <span class="lang-en">Medical records</span>
+        </a></li>
+        <li><a href="#referral" class="nav-link">
+          <span class="lang-vi">Hướng dẫn chuyển tuyến</span>
+          <span class="lang-en">Referral guidance</span>
+        </a></li>
+        <li><a href="#ai-assist" class="nav-link">
+          <span class="lang-vi">Hỗ trợ tài liệu AI</span>
+          <span class="lang-en">AI document assistance</span>
+        </a></li>
+        <li><a href="#consent" class="nav-link">
+          <span class="lang-vi">Đồng thuận & Bảo mật</span>
+          <span class="lang-en">Consent & Security</span>
+        </a></li>
+        <li class="nav-user">
+          {% if current_user is defined and current_user.is_authenticated %}
+            <a href="{{ url_for('profile') }}" class="nav-link nav-profile">
+              <span class="lang-vi">Tài khoản</span>
+              <span class="lang-en">Profile</span>
+            </a>
+          {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">
+              <span class="lang-vi">Đăng nhập</span>
+              <span class="lang-en">Login</span>
+            </a>
+          {% endif %}
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+
+    <!-- ============================================================
+         C. HERO SECTION
+         ============================================================ -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="container hero__grid">
+        <div class="hero__content">
+          <h1 id="hero-heading" class="hero__title">
+            <span class="lang-vi">Chăm sóc sức khỏe thông minh, kết nối an toàn.</span>
+            <span class="lang-en">Smart healthcare, secure connection.</span>
+          </h1>
+          <p class="hero__subtitle">
+            <span class="lang-vi">MediLink hỗ trợ quản lý hồ sơ y tế, chuẩn hóa thông tin chuyển tuyến và minh bạch hóa quyền truy cập dữ liệu sức khỏe.</span>
+            <span class="lang-en">MediLink helps manage medical records, standardize referral information, and make health-data access transparent.</span>
+          </p>
+
+          <div class="hero__actions">
+            <a href="#medical-records" class="btn btn-primary btn-lg">
+              <span class="lang-vi">Xem hồ sơ y tế</span>
+              <span class="lang-en">View medical records</span>
+            </a>
+            <a href="#ai-assist" class="btn btn-secondary btn-lg">
+              <span class="lang-vi">Hỗ trợ tài liệu AI</span>
+              <span class="lang-en">AI document help</span>
+            </a>
+          </div>
+
+          <p class="hero__trust">
+            <span class="lang-vi">Bảo mật theo nguyên tắc đồng thuận · Ghi nhận kiểm toán trên blockchain (prototype Avalanche Fuji)</span>
+            <span class="lang-en">Consent-based security · Audit trail on blockchain (Avalanche Fuji prototype)</span>
+          </p>
+        </div>
+
+        <div class="hero__media">
+          <img src="{{ url_for('static', filename='images/hero-banner.png') }}"
+               alt="MediLink – Digital healthcare portal illustration"
+               class="hero__image"
+               width="560" height="400"
+               loading="eager">
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         D. QUICK ACCESS CARDS
+         ============================================================ -->
+    <section class="quick-access section" aria-labelledby="quick-heading">
+      <div class="container">
+        <h2 id="quick-heading" class="section-title">
+          <span class="lang-vi">Truy cập nhanh</span>
+          <span class="lang-en">Quick access</span>
+        </h2>
+
+        <div class="cards-grid cards-grid--3">
+          <!-- Card 1: Digital medical records -->
+          <article class="card quick-card">
+            <img src="{{ url_for('static', filename='images/quick-1.png') }}"
+                 alt=""
+                 class="quick-card__icon"
+                 width="80" height="80"
+                 loading="lazy">
+            <h3 class="card__title">
+              <span class="lang-vi">Hồ sơ y tế số</span>
+              <span class="lang-en">Digital medical records</span>
+            </h3>
+            <p class="card__desc">
+              <span class="lang-vi">Xem tóm tắt hồ sơ, kết quả xét nghiệm và giấy chuyển tuyến đã được chuẩn hóa.</span>
+              <span class="lang-en">View record summaries, lab results and standardized referral documents.</span>
+            </p>
+            <a href="#medical-records" class="btn btn-outline btn-sm">
+              <span class="lang-vi">Mở hồ sơ</span>
+              <span class="lang-en">Open records</span>
+            </a>
+          </article>
+
+          <!-- Card 2: Referral + AI OCR -->
+          <article class="card quick-card">
+            <img src="{{ url_for('static', filename='images/quick-2.png') }}"
+                 alt=""
+                 class="quick-card__icon"
+                 width="80" height="80"
+                 loading="lazy">
+            <h3 class="card__title">
+              <span class="lang-vi">Tài liệu chuyển tuyến & AI</span>
+              <span class="lang-en">Referral docs & AI OCR</span>
+            </h3>
+            <p class="card__desc">
+              <span class="lang-vi">Tải lên giấy tờ để trích xuất thông tin hỗ trợ (prototype OCR).</span>
+              <span class="lang-en">Upload documents for assisted information extraction (OCR prototype).</span>
+            </p>
+            <a href="#ai-assist" class="btn btn-outline btn-sm">
+              <span class="lang-vi">Bắt đầu hỗ trợ</span>
+              <span class="lang-en">Start assistance</span>
+            </a>
+          </article>
+
+          <!-- Card 3: Consent management -->
+          <article class="card quick-card">
+            <img src="{{ url_for('static', filename='images/quick-3.png') }}"
+                 alt=""
+                 class="quick-card__icon"
+                 width="80" height="80"
+                 loading="lazy">
+            <h3 class="card__title">
+              <span class="lang-vi">Quản lý đồng thuận</span>
+              <span class="lang-en">Consent management</span>
+            </h3>
+            <p class="card__desc">
+              <span class="lang-vi">Kiểm soát quyền truy cập dữ liệu và ghi nhận minh bạch trên blockchain.</span>
+              <span class="lang-en">Control data-access permissions with transparent blockchain audit.</span>
+            </p>
+            <a href="#consent" class="btn btn-outline btn-sm">
+              <span class="lang-vi">Xem đồng thuận</span>
+              <span class="lang-en">View consent</span>
+            </a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         E. MEDICAL DOCUMENT ASSISTANCE / OCR
+         ============================================================ -->
+    <section id="ai-assist" class="section ai-assist" aria-labelledby="ai-heading">
+      <div class="container">
+        <h2 id="ai-heading" class="section-title">
+          <span class="lang-vi">Hỗ trợ tài liệu y tế / OCR</span>
+          <span class="lang-en">Medical document assistance / OCR</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Tải lên giấy tờ (PDF, JPG, PNG) để hệ thống hỗ trợ trích xuất thông tin. Đây là tính năng prototype – kết quả chỉ mang tính tham khảo, không thay thế đọc giấy tờ gốc.</span>
+          <span class="lang-en">Upload documents (PDF, JPG, PNG) for assisted extraction. This is a prototype feature – results are for reference only and do not replace the original document.</span>
+        </p>
+
+        <div class="card ai-panel">
+          <div class="ai-panel__upload">
+            <label for="doc-upload" class="upload-label">
+              <span class="lang-vi">Chọn tài liệu</span>
+              <span class="lang-en">Choose document</span>
+            </label>
+            <input type="file"
+                   id="doc-upload"
+                   name="document"
+                   accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                   class="upload-input"
+                   aria-describedby="upload-hint">
+            <p id="upload-hint" class="form-hint">
+              <span class="lang-vi">Định dạng: PDF, JPG, PNG · Tối đa 10 MB (theo cấu hình backend)</span>
+              <span class="lang-en">Formats: PDF, JPG, PNG · Max 10 MB (per backend configuration)</span>
+            </p>
+
+            <div class="upload-actions">
+              <button type="button" id="btn-clear-doc" class="btn btn-text" disabled>
+                <span class="lang-vi">Xóa / Thay thế</span>
+                <span class="lang-en">Clear / Replace</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Preview area -->
+          <div id="doc-preview" class="doc-preview" hidden>
+            <h3 class="doc-preview__title">
+              <span class="lang-vi">Xem trước</span>
+              <span class="lang-en">Preview</span>
+            </h3>
+            <div class="doc-preview__content" id="doc-preview-content"></div>
+          </div>
+
+          <!-- Processing status -->
+          <div id="doc-status" class="status-area" role="status" aria-live="polite" hidden>
+            <p class="status-msg status-msg--processing">
+              <span class="lang-vi">Đang xử lý tài liệu…</span>
+              <span class="lang-en">Processing document…</span>
+            </p>
+          </div>
+
+          <!-- Result area -->
+          <div id="doc-result" class="result-area" hidden>
+            <h3 class="result-title">
+              <span class="lang-vi">Thông tin trích xuất (demo)</span>
+              <span class="lang-en">Extracted information (demo)</span>
+            </h3>
+            <div id="doc-result-content" class="result-content">
+              <!-- Populated by JS when backend is ready -->
+            </div>
+            <p class="result-note">
+              <span class="lang-vi">Dữ liệu demo – không phải hồ sơ bệnh nhân thật. Luôn đối chiếu với bản gốc.</span>
+              <span class="lang-en">Demo data only – not a real patient record. Always verify against the original.</span>
+            </p>
+          </div>
+
+          <!-- Sample visual (clearly labelled) -->
+          <div class="sample-docs">
+            <p class="sample-label">
+              <span class="lang-vi">Ví dụ minh họa (không phải dữ liệu thật):</span>
+              <span class="lang-en">Illustration samples (not real data):</span>
+            </p>
+            <div class="sample-images">
+              <img src="{{ url_for('static', filename='images/sample-1.png') }}"
+                   alt="Sample medical document illustration 1"
+                   width="120" height="160"
+                   loading="lazy">
+              <img src="{{ url_for('static', filename='images/sample-2.png') }}"
+                   alt="Sample medical document illustration 2"
+                   width="120" height="160"
+                   loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         F. MEDICAL INFORMATION AND FOLLOW-UP GUIDANCE
+         ============================================================ -->
+    <section id="referral" class="section follow-up" aria-labelledby="followup-heading">
+      <div class="container">
+        <h2 id="followup-heading" class="section-title">
+          <span class="lang-vi">Thông tin theo dõi & hướng dẫn</span>
+          <span class="lang-en">Follow-up information & guidance</span>
+        </h2>
+
+        <div class="card follow-up-panel">
+          <p class="follow-up__notice">
+            <strong>
+              <span class="lang-vi">Đây là tính năng prototype.</span>
+              <span class="lang-en">This is a prototype feature.</span>
+            </strong>
+            <span class="lang-vi"> Không kết nối với dịch vụ lâm sàng thật. Không đưa ra chẩn đoán hay quyết định chuyển tuyến tự động.</span>
+            <span class="lang-en"> Not connected to a real clinical service. Does not provide diagnosis or automatic transfer decisions.</span>
+          </p>
+
+          <div class="follow-up__options" role="group" aria-labelledby="followup-question">
+            <p id="followup-question" class="follow-up__question">
+              <span class="lang-vi">Sau khi khám / điều trị, tình trạng của bạn thế nào?</span>
+              <span class="lang-en">After your visit / treatment, how are you feeling?</span>
+            </p>
+
+            <div class="follow-up__buttons">
+              <button type="button" class="btn btn-outline" id="btn-improved" data-status="improved">
+                <span class="lang-vi">Đã cải thiện</span>
+                <span class="lang-en">Improved</span>
+              </button>
+              <button type="button" class="btn btn-outline" id="btn-no-improve" data-status="no-improvement">
+                <span class="lang-vi">Chưa cải thiện</span>
+                <span class="lang-en">No improvement</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="followup-response" class="follow-up__response" hidden aria-live="polite">
+            <!-- Filled by JS with safe, non-diagnostic guidance -->
+          </div>
+
+          <div class="urgent-box" role="alert">
+            <h3 class="urgent-box__title">
+              <span class="lang-vi">Dấu hiệu cần khám ngay</span>
+              <span class="lang-en">Warning signs – seek care immediately</span>
+            </h3>
+            <ul class="urgent-box__list">
+              <li>
+                <span class="lang-vi">Khó thở, đau ngực, mất ý thức, chảy máu nhiều, sốt cao kéo dài…</span>
+                <span class="lang-en">Shortness of breath, chest pain, loss of consciousness, heavy bleeding, prolonged high fever…</span>
+              </li>
+            </ul>
+            <p class="urgent-box__action">
+              <span class="lang-vi">Hãy đến cơ sở y tế gần nhất hoặc gọi cấp cứu. Không chờ 48 giờ.</span>
+              <span class="lang-en">Go to the nearest medical facility or call emergency services. Do not wait 48 hours.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         G. CONSENT AND AVALANCHE SECTION
+         ============================================================ -->
+    <section id="consent" class="section consent-section" aria-labelledby="consent-heading">
+      <div class="container">
+        <h2 id="consent-heading" class="section-title">
+          <span class="lang-vi">Đồng thuận & Bảo mật trên Avalanche</span>
+          <span class="lang-en">Consent & Security on Avalanche</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Quyền truy cập dữ liệu sức khỏe được ghi nhận minh bạch. Chỉ trạng thái đồng thuận, phạm vi quyền và timestamp được ghi trên chuỗi – không đưa thông tin y tế nhạy cảm lên blockchain.</span>
+          <span class="lang-en">Health-data access rights are recorded transparently. Only consent state, permission scope and timestamps go on-chain – no sensitive medical information is stored on the blockchain.</span>
+        </p>
+
+        <div class="card consent-panel">
+          <!-- Consent status -->
+          <div class="consent-status" id="consent-status">
+            <span class="status-label">
+              <span class="lang-vi">Trạng thái đồng thuận:</span>
+              <span class="lang-en">Consent status:</span>
+            </span>
+            <span class="status-value status-value--disconnected" id="consent-status-value">
+              <span class="lang-vi">Chưa kết nối ví</span>
+              <span class="lang-en">Wallet not connected</span>
+            </span>
+          </div>
+
+          <!-- Connect / Grant button -->
+          <div class="consent-actions">
+            <button type="button" id="btn-connect-wallet" class="btn btn-primary btn-glow">
+              <span class="lang-vi">Kết nối MetaMask / Cấp quyền</span>
+              <span class="lang-en">Connect MetaMask / Grant access</span>
+            </button>
+            <p class="consent-hint">
+              <span class="lang-vi">Chỉ dùng mạng Avalanche Fuji (testnet) nếu đã cấu hình. Đây là prototype.</span>
+              <span class="lang-en">Use Avalanche Fuji (testnet) only if configured. This is a prototype.</span>
+            </p>
+          </div>
+
+          <!-- QR display area -->
+          <div class="consent-qr" id="consent-qr-area" hidden>
+            <h3 class="consent-qr__title">
+              <span class="lang-vi">Mã QR tham chiếu (demo)</span>
+              <span class="lang-en">Reference QR code (demo)</span>
+            </h3>
+            <img src="{{ url_for('static', filename='images/qr-code.png') }}"
+                 alt="Demonstration QR code – not sufficient authorization by itself"
+                 class="consent-qr__img"
+                 width="160" height="160"
+                 loading="lazy">
+            <p class="consent-qr__note">
+              <span class="lang-vi">QR chỉ mang tính minh họa. Backend phải xác minh danh tính, phạm vi quyền và thời hạn độc lập.</span>
+              <span class="lang-en">QR is illustrative only. Backend must independently verify identity, permission scope and expiry.</span>
+            </p>
+          </div>
+
+          <!-- Transaction status -->
+          <div id="tx-status" class="tx-status" role="status" aria-live="polite">
+            <div class="tx-state tx-state--idle" id="tx-state-idle">
+              <span class="lang-vi">Chưa có giao dịch</span>
+              <span class="lang-en">No transaction yet</span>
+            </div>
+            <div class="tx-state tx-state--pending" id="tx-state-pending" hidden>
+              <span class="lang-vi">Đang chờ xác nhận giao dịch…</span>
+              <span class="lang-en">Waiting for transaction confirmation…</span>
+            </div>
+            <div class="tx-state tx-state--success" id="tx-state-success" hidden>
+              <span class="lang-vi">Giao dịch thành công</span>
+              <span class="lang-en">Transaction successful</span>
+              <p class="tx-hash" id="tx-hash-display"></p>
+              <a href="#" id="tx-explorer-link" class="tx-explorer" target="_blank" rel="noopener noreferrer" hidden>
+                <span class="lang-vi">Xem trên explorer</span>
+                <span class="lang-en">View on explorer</span>
+              </a>
+            </div>
+            <div class="tx-state tx-state--failed" id="tx-state-failed" hidden>
+              <span class="lang-vi">Giao dịch thất bại</span>
+              <span class="lang-en">Transaction failed</span>
+              <p class="tx-error" id="tx-error-msg"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         H. MEDICAL RECORDS PANEL
+         ============================================================ -->
+    <section id="medical-records" class="section records-section" aria-labelledby="records-heading">
+      <div class="container">
+        <h2 id="records-heading" class="section-title">
+          <span class="lang-vi">Hồ sơ y tế</span>
+          <span class="lang-en">Medical records</span>
+        </h2>
+
+        <div class="card records-panel">
+          <!-- Empty state (default for prototype without real data) -->
+          <div id="records-empty" class="records-empty">
+            <img src="{{ url_for('static', filename='images/empty-record.png') }}"
+                 alt=""
+                 class="records-empty__img"
+                 width="200" height="160"
+                 loading="lazy">
+            <h3 class="records-empty__title">
+              <span class="lang-vi">Chưa có hồ sơ hiển thị</span>
+              <span class="lang-en">No records to display</span>
+            </h3>
+            <p class="records-empty__desc">
+              <span class="lang-vi">Đăng nhập và cấp quyền đồng thuận để xem tóm tắt hồ sơ, giấy chuyển tuyến và kết quả xét nghiệm (khi backend sẵn sàng).</span>
+              <span class="lang-en">Log in and grant consent to view record summaries, referral letters and test results (when backend is ready).</span>
+            </p>
+            <a href="{{ url_for('login') }}" class="btn btn-primary">
+              <span class="lang-vi">Đăng nhập</span>
+              <span class="lang-en">Login</span>
+            </a>
+          </div>
+
+          <!-- Records list (hidden until data is available) -->
+          <div id="records-list" class="records-list" hidden>
+            <!-- Populated by backend / JS with safe placeholder or real data -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================
+       I. FOOTER
+       ============================================================ -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="MediLink"
+             width="120" height="36"
+             loading="lazy">
+        <p class="footer-tagline">
+          <span class="lang-vi">Cổng thông tin y tế số · Đồng thuận minh bạch</span>
+          <span class="lang-en">Digital healthcare portal · Transparent consent</span>
+        </p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer">
+        <a href="#privacy">
+          <span class="lang-vi">Quyền riêng tư</span>
+          <span class="lang-en">Privacy</span>
+        </a>
+        <a href="#security">
+          <span class="lang-vi">Bảo mật</span>
+          <span class="lang-en">Security</span>
+        </a>
+        <a href="#help">
+          <span class="lang-vi">Trợ giúp</span>
+          <span class="lang-en">Help</span>
+        </a>
+      </nav>
+
+      <p class="footer-disclaimer">
+        <span class="lang-vi">MediLink là dự án prototype. Không phải hệ thống bệnh viện chính thức. Không lưu thông tin y tế nhạy cảm trên blockchain. Luôn xác minh với cơ sở y tế thực tế.</span>
+        <span class="lang-en">MediLink is a prototype project. Not an official hospital system. Sensitive medical data is never stored on-chain. Always verify with real healthcare providers.</span>
+      </p>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

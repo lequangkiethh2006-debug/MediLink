@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="classic-royal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MediLink – Cổng nhân viên y tế: bàn giao ca SBAR, xác minh đồng thuận và gói hồ sơ số">
+  <title>MediLink | <span class="lang-vi">Cổng nhân viên y tế</span><span class="lang-en">Healthcare Staff Portal</span></title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="theme-classic-royal staff-portal">
+
+  <!-- ============================================================
+       A. TOP BAR AND STAFF IDENTITY
+       ============================================================ -->
+  <div class="top-bar top-bar--staff" role="banner">
+    <div class="container top-bar__inner">
+      <div class="top-bar__brand">
+        <a href="{{ url_for('hospital') }}" class="top-bar__logo-link">
+          <img src="{{ url_for('static', filename='images/logo.png') }}"
+               alt="MediLink"
+               width="140" height="40"
+               loading="eager">
+        </a>
+        <span class="top-bar__portal-badge top-bar__portal-badge--staff">
+          <span class="lang-vi">Cổng nhân viên y tế</span>
+          <span class="lang-en">Healthcare Staff Portal</span>
+        </span>
+      </div>
+
+      <div class="top-bar__staff-identity" id="staff-identity">
+        <!-- Demo identity only – replace with backend data when available -->
+        <span class="staff-demo-label">
+          <span class="lang-vi">Tài khoản demo</span>
+          <span class="lang-en">Demo account</span>
+        </span>
+        <span class="staff-role" id="staff-role-display">
+          <span class="lang-vi">Chưa chọn vai trò</span>
+          <span class="lang-en">Role not selected</span>
+        </span>
+        {% if staff_department is defined and staff_department %}
+          <span class="staff-dept">{{ staff_department }}</span>
+        {% endif %}
+      </div>
+
+      <div class="top-bar__actions">
+        <a href="{{ url_for('index') }}" class="btn-text top-bar__patient-link">
+          <span class="lang-vi">Cổng bệnh nhân</span>
+          <span class="lang-en">Patient Portal</span>
+        </a>
+
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" class="lang-btn active" data-lang="vi" aria-pressed="true">VI</button>
+          <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" class="theme-btn active" data-theme="classic-royal" title="Classic Royal">
+            <span class="lang-vi">Cổ điển</span>
+            <span class="lang-en">Classic</span>
+          </button>
+          <button type="button" class="theme-btn" data-theme="cyber-heritage" title="Cyber Heritage">
+            <span class="lang-vi">Hiện đại</span>
+            <span class="lang-en">Cyber</span>
+          </button>
+        </div>
+
+        {% if logout_endpoint is defined %}
+          <a href="{{ url_for(logout_endpoint) }}" class="btn btn-outline btn-sm">
+            <span class="lang-vi">Đăng xuất</span>
+            <span class="lang-en">Logout</span>
+          </a>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="btn btn-outline btn-sm">
+            <span class="lang-vi">Đăng xuất / Đăng nhập</span>
+            <span class="lang-en">Logout / Login</span>
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <main id="main-content" class="staff-main">
+
+    <!-- ============================================================
+         B. CLINICAL DASHBOARD SUMMARY
+         ============================================================ -->
+    <section class="section dashboard-section" aria-labelledby="dashboard-heading">
+      <div class="container">
+        <h1 id="dashboard-heading" class="section-title section-title--page">
+          <span class="lang-vi">Bảng điều khiển lâm sàng</span>
+          <span class="lang-en">Clinical Dashboard</span>
+        </h1>
+
+        <div class="cards-grid cards-grid--5 dashboard-cards">
+          <!-- Shift status -->
+          <article class="card dash-card">
+            <h3 class="dash-card__label">
+              <span class="lang-vi">Ca trực hiện tại</span>
+              <span class="lang-en">Current shift</span>
+            </h3>
+            <p class="dash-card__value" id="dash-shift-status">
+              <span class="lang-vi">Chưa check-in</span>
+              <span class="lang-en">Not checked in</span>
+            </p>
+          </article>
+
+          <!-- Pending handovers -->
+          <article class="card dash-card">
+            <h3 class="dash-card__label">
+              <span class="lang-vi">Bàn giao chờ xử lý</span>
+              <span class="lang-en">Pending handovers</span>
+            </h3>
+            <p class="dash-card__value" id="dash-pending-handovers">
+              <span class="lang-vi">—</span>
+              <span class="lang-en">—</span>
+            </p>
+            <p class="dash-card__note">
+              <span class="lang-vi">Chờ dữ liệu backend</span>
+              <span class="lang-en">Awaiting backend data</span>
+            </p>
+          </article>
+
+          <!-- Medical packets -->
+          <article class="card dash-card">
+            <h3 class="dash-card__label">
+              <span class="lang-vi">Gói hồ sơ chờ duyệt</span>
+              <span class="lang-en">Packets awaiting review</span>
+            </h3>
+            <p class="dash-card__value" id="dash-pending-packets">
+              <span class="lang-vi">—</span>
+              <span class="lang-en">—</span>
+            </p>
+            <p class="dash-card__note">
+              <span class="lang-vi">Chờ dữ liệu backend</span>
+              <span class="lang-en">Awaiting backend data</span>
+            </p>
+          </article>
+
+          <!-- Referral requests -->
+          <article class="card dash-card">
+            <h3 class="dash-card__label">
+              <span class="lang-vi">Yêu cầu chuyển tuyến</span>
+              <span class="lang-en">Referral requests</span>
+            </h3>
+            <p class="dash-card__value" id="dash-referral-count">
+              <span class="lang-vi">—</span>
+              <span class="lang-en">—</span>
+            </p>
+            <p class="dash-card__note">
+              <span class="lang-vi">Chờ dữ liệu backend</span>
+              <span class="lang-en">Awaiting backend data</span>
+            </p>
+          </article>
+
+          <!-- Blockchain status -->
+          <article class="card dash-card">
+            <h3 class="dash-card__label">
+              <span class="lang-vi">Trạng thái blockchain</span>
+              <span class="lang-en">Blockchain status</span>
+            </h3>
+            <p class="dash-card__value status-value--disconnected" id="dash-blockchain-status">
+              <span class="lang-vi">Prototype</span>
+              <span class="lang-en">Prototype</span>
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         C. STAFF CHECK-IN / CHECK-OUT
+         ============================================================ -->
+    <section id="shift-management" class="section shift-section" aria-labelledby="shift-heading">
+      <div class="container">
+        <h2 id="shift-heading" class="section-title">
+          <span class="lang-vi">Quản lý ca trực</span>
+          <span class="lang-en">Shift management</span>
+        </h2>
+
+        <div class="card shift-panel">
+          <p class="prototype-badge">
+            <span class="lang-vi">Prototype – chưa ghi nhận ca thực tế cho đến khi backend xác nhận</span>
+            <span class="lang-en">Prototype – shift is not recorded until backend confirms</span>
+          </p>
+
+          <form id="shift-form" class="shift-form" novalidate>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="staff-role-select">
+                  <span class="lang-vi">Vai trò</span>
+                  <span class="lang-en">Role</span>
+                </label>
+                <select id="staff-role-select" name="role" required>
+                  <option value="">
+                    <span class="lang-vi">— Chọn vai trò —</span>
+                    <span class="lang-en">— Select role —</span>
+                  </option>
+                  <option value="shift-lead">
+                    <span class="lang-vi">Bác sĩ trưởng ca</span>
+                    <span class="lang-en">Shift-leading physician</span>
+                  </option>
+                  <option value="treating">
+                    <span class="lang-vi">Bác sĩ điều trị</span>
+                    <span class="lang-en">Treating physician</span>
+                  </option>
+                  <option value="nurse">
+                    <span class="lang-vi">Điều dưỡng</span>
+                    <span class="lang-en">Nurse</span>
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="staff-unit">
+                  <span class="lang-vi">Khoa / Đơn vị (tùy chọn)</span>
+                  <span class="lang-en">Department / Unit (optional)</span>
+                </label>
+                <input type="text" id="staff-unit" name="unit" maxlength="80"
+                       placeholder="VD: Nội tổng hợp / General Medicine"
+                       autocomplete="off">
+              </div>
+            </div>
+
+            <div class="shift-actions">
+              <button type="button" id="btn-check-in" class="btn btn-primary">
+                <span class="lang-vi">Bắt đầu ca / Check-in</span>
+                <span class="lang-en">Start shift / Check-in</span>
+              </button>
+              <button type="button" id="btn-check-out" class="btn btn-secondary" disabled>
+                <span class="lang-vi">Kết thúc ca / Check-out</span>
+                <span class="lang-en">End shift / Check-out</span>
+              </button>
+            </div>
+
+            <div class="shift-status" id="shift-status" role="status" aria-live="polite">
+              <span class="status-label">
+                <span class="lang-vi">Trạng thái ca:</span>
+                <span class="lang-en">Shift status:</span>
+              </span>
+              <span class="status-value" id="shift-status-value">
+                <span class="lang-vi">Chưa check-in</span>
+                <span class="lang-en">Not checked in</span>
+              </span>
+            </div>
+
+            <div class="handover-indicator" id="handover-required" hidden>
+              <span class="lang-vi">⚠ Cần bàn giao ca trước khi check-out</span>
+              <span class="lang-en">⚠ Handover required before check-out</span>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         D. SBAR SHIFT HANDOVER WORKSPACE
+         ============================================================ -->
+    <section id="sbar" class="section sbar-section" aria-labelledby="sbar-heading">
+      <div class="container">
+        <h2 id="sbar-heading" class="section-title">
+          <span class="lang-vi">Bàn giao ca theo SBAR</span>
+          <span class="lang-en">SBAR Shift Handover</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Nhập thông tin bàn giao. AI chỉ hỗ trợ tóm tắt nội dung đã nhập – không tự tạo chẩn đoán hay khuyến nghị. Mọi nội dung phải được bác sĩ/điều dưỡng có thẩm quyền xem lại trước khi gửi.</span>
+          <span class="lang-en">Enter handover information. AI may only summarize staff-entered content – it must not invent diagnoses or recommendations. All content must be reviewed by authorized clinicians before submission.</span>
+        </p>
+
+        <div class="card sbar-panel">
+          <form id="sbar-form" class="sbar-form" novalidate>
+            <!-- Meta -->
+            <div class="form-row sbar-meta">
+              <div class="form-group">
+                <label for="sbar-case-ref">
+                  <span class="lang-vi">Mã tham chiếu ca (an toàn)</span>
+                  <span class="lang-en">Safe case reference</span>
+                </label>
+                <input type="text" id="sbar-case-ref" name="case_ref" maxlength="40"
+                       placeholder="VD: CASE-DEMO-001"
+                       autocomplete="off">
+                <p class="form-hint">
+                  <span class="lang-vi">Chỉ dùng mã do hệ thống cung cấp. Không nhập tên, CCCD hay thông tin nhận dạng.</span>
+                  <span class="lang-en">Use only system-supplied codes. Do not enter names, citizen IDs or identifying information.</span>
+                </p>
+              </div>
+              <div class="form-group">
+                <label for="sbar-reporter-role">
+                  <span class="lang-vi">Vai trò người báo cáo</span>
+                  <span class="lang-en">Reporting staff role</span>
+                </label>
+                <input type="text" id="sbar-reporter-role" name="reporter_role" readonly
+                       value=""
+                       placeholder="—">
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="lang-vi">Thời gian bàn giao</span>
+                  <span class="lang-en">Handover timestamp</span>
+                </label>
+                <p class="timestamp-display" id="sbar-timestamp">
+                  <span class="lang-vi">Sẽ được ghi bởi máy chủ khi gửi</span>
+                  <span class="lang-en">Will be recorded by server on submit</span>
+                </p>
+              </div>
+            </div>
+
+            <!-- S — Situation -->
+            <fieldset class="sbar-block sbar-block--s">
+              <legend>
+                <span class="sbar-letter">S</span>
+                <span class="lang-vi">Situation – Tình huống hiện tại</span>
+                <span class="lang-en">Situation – Current clinical situation</span>
+              </legend>
+              <div class="form-group">
+                <label for="sbar-situation">
+                  <span class="lang-vi">Mô tả tình huống & lý do bàn giao</span>
+                  <span class="lang-en">Describe situation & reason for handover</span>
+                </label>
+                <textarea id="sbar-situation" name="situation" rows="4"
+                          placeholder="..." maxlength="2000"></textarea>
+              </div>
+            </fieldset>
+
+            <!-- B — Background -->
+            <fieldset class="sbar-block sbar-block--b">
+              <legend>
+                <span class="sbar-letter">B</span>
+                <span class="lang-vi">Background – Bối cảnh</span>
+                <span class="lang-en">Background – Relevant history</span>
+              </legend>
+              <div class="form-group">
+                <label for="sbar-background">
+                  <span class="lang-vi">Tiền sử liên quan, điều trị / chuyển tuyến hiện có</span>
+                  <span class="lang-en">Relevant history, existing treatment or referral context</span>
+                </label>
+                <textarea id="sbar-background" name="background" rows="4"
+                          placeholder="..." maxlength="2000"></textarea>
+              </div>
+            </fieldset>
+
+            <!-- A — Assessment -->
+            <fieldset class="sbar-block sbar-block--a">
+              <legend>
+                <span class="sbar-letter">A</span>
+                <span class="lang-vi">Assessment – Đánh giá</span>
+                <span class="lang-en">Assessment – Current assessment</span>
+              </legend>
+              <div class="form-group">
+                <label for="sbar-assessment">
+                  <span class="lang-vi">Đánh giá hiện tại, quan sát, xét nghiệm tóm tắt, vấn đề còn tồn tại</span>
+                  <span class="lang-en">Current assessment, observations, test summaries, outstanding concerns</span>
+                </label>
+                <textarea id="sbar-assessment" name="assessment" rows="4"
+                          placeholder="..." maxlength="2000"></textarea>
+              </div>
+            </fieldset>
+
+            <!-- R — Recommendation -->
+            <fieldset class="sbar-block sbar-block--r">
+              <legend>
+                <span class="sbar-letter">R</span>
+                <span class="lang-vi">Recommendation – Khuyến nghị</span>
+                <span class="lang-en">Recommendation – Next steps</span>
+              </legend>
+              <div class="form-group">
+                <label for="sbar-recommendation">
+                  <span class="lang-vi">Nhiệm vụ theo dõi, xét nghiệm chờ, bước tiếp theo do người chịu trách nhiệm ghi nhận</span>
+                  <span class="lang-en">Follow-up tasks, pending tests, recommended next steps documented by responsible clinician</span>
+                </label>
+                <textarea id="sbar-recommendation" name="recommendation" rows="4"
+                          placeholder="..." maxlength="2000"></textarea>
+              </div>
+            </fieldset>
+
+            <div class="sbar-actions">
+              <button type="button" id="btn-sbar-draft" class="btn btn-outline">
+                <span class="lang-vi">Lưu nháp</span>
+                <span class="lang-en">Save draft</span>
+              </button>
+              <button type="submit" id="btn-sbar-submit" class="btn btn-primary">
+                <span class="lang-vi">Gửi bàn giao</span>
+                <span class="lang-en">Submit handover</span>
+              </button>
+            </div>
+
+            <div id="sbar-status" class="status-area" role="status" aria-live="polite" hidden>
+              <p class="status-msg" id="sbar-status-msg"></p>
+            </div>
+          </form>
+
+          <!-- Handover history (placeholder) -->
+          <div class="sbar-history" id="sbar-history">
+            <h3 class="sbar-history__title">
+              <span class="lang-vi">Lịch sử bàn giao</span>
+              <span class="lang-en">Handover history</span>
+            </h3>
+            <div class="table-wrap">
+              <table class="data-table" aria-describedby="sbar-history-empty">
+                <thead>
+                  <tr>
+                    <th><span class="lang-vi">Mã ca</span><span class="lang-en">Case ref</span></th>
+                    <th><span class="lang-vi">Thời gian</span><span class="lang-en">Time</span></th>
+                    <th><span class="lang-vi">Vai trò</span><span class="lang-en">Role</span></th>
+                    <th><span class="lang-vi">Trạng thái</span><span class="lang-en">Status</span></th>
+                  </tr>
+                </thead>
+                <tbody id="sbar-history-body">
+                  <tr id="sbar-history-empty">
+                    <td colspan="4" class="empty-cell">
+                      <span class="lang-vi">Chưa có bàn giao nào được ghi nhận</span>
+                      <span class="lang-en">No handovers recorded yet</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         E. QR SCANNER AND CONSENT VERIFICATION
+         ============================================================ -->
+    <section id="qr-consent" class="section qr-section" aria-labelledby="qr-heading">
+      <div class="container">
+        <h2 id="qr-heading" class="section-title">
+          <span class="lang-vi">Quét QR & Xác minh đồng thuận</span>
+          <span class="lang-en">QR Scanner & Consent Verification</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Mã QR chỉ là tham chiếu token. Quyền truy cập phải được backend xác minh (hết hạn, phạm vi, trạng thái token, thẩm quyền nhân viên). Không hiển thị thông tin y tế trước khi xác minh thành công.</span>
+          <span class="lang-en">A QR code is only a token reference. Access must be verified by the backend (expiry, scope, token status, staff authorization). Medical information is never shown before successful verification.</span>
+        </p>
+
+        <div class="card qr-panel">
+          <div class="qr-controls">
+            <div id="qr-reader" class="qr-reader-area" aria-label="QR scanner viewfinder">
+              <!-- html5-qrcode or similar mounts here when available -->
+              <div class="qr-placeholder">
+                <img src="{{ url_for('static', filename='images/qr-code.png') }}"
+                     alt="Demonstration QR code – not a valid consent token"
+                     width="160" height="160"
+                     loading="lazy">
+                <p class="qr-placeholder__text">
+                  <span class="lang-vi">Khu vực quét (prototype)</span>
+                  <span class="lang-en">Scanner area (prototype)</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="qr-buttons">
+              <button type="button" id="btn-start-scan" class="btn btn-primary">
+                <span class="lang-vi">Bắt đầu quét</span>
+                <span class="lang-en">Start scanning</span>
+              </button>
+              <button type="button" id="btn-stop-scan" class="btn btn-secondary" disabled>
+                <span class="lang-vi">Dừng quét</span>
+                <span class="lang-en">Stop scanning</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group manual-token">
+            <label for="consent-token-input">
+              <span class="lang-vi">Hoặc nhập token đồng thuận thủ công</span>
+              <span class="lang-en">Or enter consent token manually</span>
+            </label>
+            <div class="input-with-btn">
+              <input type="text" id="consent-token-input" name="consent_token"
+                     maxlength="128" autocomplete="off"
+                     placeholder="token…">
+              <button type="button" id="btn-verify-token" class="btn btn-outline">
+                <span class="lang-vi">Xác minh</span>
+                <span class="lang-en">Verify</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="verify-status" class="status-area" role="status" aria-live="polite">
+            <p class="status-msg status-msg--idle" id="verify-status-msg">
+              <span class="lang-vi">Chưa xác minh</span>
+              <span class="lang-en">Not verified</span>
+            </p>
+          </div>
+
+          <!-- Locked until authorization succeeds -->
+          <div id="record-access-lock" class="record-lock">
+            <p>
+              <span class="lang-vi">Gói hồ sơ số bị khóa cho đến khi xác minh đồng thuận thành công.</span>
+              <span class="lang-en">Digital medical packet remains locked until consent verification succeeds.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         F. DIGITAL MEDICAL PACKET VIEWER
+         ============================================================ -->
+    <section id="medical-packet" class="section packet-section" aria-labelledby="packet-heading">
+      <div class="container">
+        <h2 id="packet-heading" class="section-title">
+          <span class="lang-vi">Gói hồ sơ số (sau xác minh)</span>
+          <span class="lang-en">Digital Medical Packet (after verification)</span>
+        </h2>
+
+        <div class="card packet-panel" id="packet-panel">
+          <!-- Default: locked / empty -->
+          <div id="packet-empty" class="records-empty">
+            <img src="{{ url_for('static', filename='images/empty-record.png') }}"
+                 alt=""
+                 class="records-empty__img"
+                 width="180" height="140"
+                 loading="lazy">
+            <h3 class="records-empty__title">
+              <span class="lang-vi">Chưa có gói hồ sơ được mở khóa</span>
+              <span class="lang-en">No unlocked medical packet</span>
+            </h3>
+            <p class="records-empty__desc">
+              <span class="lang-vi">Quét QR hoặc nhập token hợp lệ và hoàn tất xác minh để xem tóm tắt được phép (theo nguyên tắc tối thiểu cần thiết).</span>
+              <span class="lang-en">Scan a QR or enter a valid token and complete verification to view the permitted summary (least-privilege).</span>
+            </p>
+          </div>
+
+          <!-- Populated only after successful authorization – structure ready for backend data -->
+          <div id="packet-content" class="packet-content" hidden>
+            <div class="packet-meta">
+              <span class="packet-scope" id="packet-scope"></span>
+              <span class="packet-expiry" id="packet-expiry"></span>
+            </div>
+            <div class="packet-sections">
+              <section class="packet-block">
+                <h3><span class="lang-vi">Tóm tắt chuyển tuyến</span><span class="lang-en">Referral summary</span></h3>
+                <div id="packet-referral" class="packet-data"></div>
+              </section>
+              <section class="packet-block">
+                <h3><span class="lang-vi">Tiền sử liên quan</span><span class="lang-en">Relevant history</span></h3>
+                <div id="packet-history" class="packet-data"></div>
+              </section>
+              <section class="packet-block">
+                <h3><span class="lang-vi">Kết quả xét nghiệm tóm tắt</span><span class="lang-en">Lab result summaries</span></h3>
+                <div id="packet-labs" class="packet-data"></div>
+              </section>
+              <section class="packet-block">
+                <h3><span class="lang-vi">Trạng thái đồng thuận</span><span class="lang-en">Consent status</span></h3>
+                <div id="packet-consent" class="packet-data"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         G. AVALANCHE FUJI AUDIT PANEL
+         ============================================================ -->
+    <section id="audit" class="section audit-section" aria-labelledby="audit-heading">
+      <div class="container">
+        <h2 id="audit-heading" class="section-title">
+          <span class="lang-vi">Kiểm toán Avalanche Fuji</span>
+          <span class="lang-en">Avalanche Fuji Audit</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Chỉ ghi trạng thái đồng thuận, metadata truy cập hoặc hash kiểm toán tối thiểu. Không lưu hồ sơ y tế thô trên chuỗi.</span>
+          <span class="lang-en">Only consent state, access metadata or minimal audit hashes are recorded. Raw medical records are never stored on-chain.</span>
+        </p>
+
+        <div class="card audit-panel">
+          <dl class="audit-status-list">
+            <div class="audit-item">
+              <dt><span class="lang-vi">Mạng</span><span class="lang-en">Network</span></dt>
+              <dd id="audit-network">
+                <span class="lang-vi">Avalanche Fuji (prototype)</span>
+                <span class="lang-en">Avalanche Fuji (prototype)</span>
+              </dd>
+            </div>
+            <div class="audit-item">
+              <dt><span class="lang-vi">Ví</span><span class="lang-en">Wallet</span></dt>
+              <dd id="audit-wallet" class="status-value--disconnected">
+                <span class="lang-vi">Chưa kết nối</span>
+                <span class="lang-en">Not connected</span>
+              </dd>
+            </div>
+            <div class="audit-item">
+              <dt><span class="lang-vi">Đồng thuận</span><span class="lang-en">Consent</span></dt>
+              <dd id="audit-consent">
+                <span class="lang-vi">Chưa xác minh</span>
+                <span class="lang-en">Not verified</span>
+              </dd>
+            </div>
+            <div class="audit-item">
+              <dt><span class="lang-vi">SBAR audit</span><span class="lang-en">SBAR audit</span></dt>
+              <dd id="audit-sbar">
+                <span class="lang-vi">Chưa có</span>
+                <span class="lang-en">None</span>
+              </dd>
+            </div>
+          </dl>
+
+          <div id="audit-tx" class="tx-status" role="status" aria-live="polite">
+            <div class="tx-state tx-state--idle" id="audit-tx-idle">
+              <span class="lang-vi">Chưa có giao dịch</span>
+              <span class="lang-en">No transaction yet</span>
+            </div>
+            <div class="tx-state tx-state--pending" id="audit-tx-pending" hidden>
+              <span class="lang-vi">Đang chờ xác nhận…</span>
+              <span class="lang-en">Awaiting confirmation…</span>
+            </div>
+            <div class="tx-state tx-state--success" id="audit-tx-success" hidden>
+              <span class="lang-vi">Đã xác nhận</span>
+              <span class="lang-en">Confirmed</span>
+              <p class="tx-hash" id="audit-tx-hash"></p>
+              <a href="#" id="audit-explorer-link" class="tx-explorer" target="_blank" rel="noopener noreferrer" hidden>
+                <span class="lang-vi">Xem trên explorer</span>
+                <span class="lang-en">View on explorer</span>
+              </a>
+            </div>
+            <div class="tx-state tx-state--failed" id="audit-tx-failed" hidden>
+              <span class="lang-vi">Thất bại</span>
+              <span class="lang-en">Failed</span>
+              <p class="tx-error" id="audit-tx-error"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         H. REFERRAL AND FOLLOW-UP QUEUE
+         ============================================================ -->
+    <section id="referral-queue" class="section referral-section" aria-labelledby="referral-heading">
+      <div class="container">
+        <h2 id="referral-heading" class="section-title">
+          <span class="lang-vi">Hàng đợi chuyển tuyến & theo dõi</span>
+          <span class="lang-en">Referral & Follow-up Queue</span>
+        </h2>
+        <p class="section-intro">
+          <span class="lang-vi">Chỉ hiển thị dữ liệu do backend cung cấp hoặc dữ liệu demo được ghi rõ. Không kết nối hệ thống xếp lịch bệnh viện thật.</span>
+          <span class="lang-en">Only backend-supplied records or explicitly labeled demo data are shown. Not connected to a real hospital scheduling system.</span>
+        </p>
+
+        <div class="card referral-panel">
+          <div class="table-wrap">
+            <table class="data-table" id="referral-table">
+              <thead>
+                <tr>
+                  <th><span class="lang-vi">Mã ca</span><span class="lang-en">Case ref</span></th>
+                  <th><span class="lang-vi">Trạng thái</span><span class="lang-en">Status</span></th>
+                  <th><span class="lang-vi">Ưu tiên</span><span class="lang-en">Priority</span></th>
+                  <th><span class="lang-vi">Cập nhật</span><span class="lang-en">Last updated</span></th>
+                  <th><span class="lang-vi">Hành động cần</span><span class="lang-en">Required action</span></th>
+                </tr>
+              </thead>
+              <tbody id="referral-body">
+                <tr>
+                  <td colspan="5" class="empty-cell">
+                    <span class="lang-vi">Chưa có yêu cầu chuyển tuyến</span>
+                    <span class="lang-en">No referral requests</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================
+       I. FOOTER AND SECURITY NOTICE
+       ============================================================ -->
+  <footer class="site-footer site-footer--staff">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="MediLink"
+             width="120" height="36"
+             loading="lazy">
+        <p class="footer-tagline">
+          <span class="lang-vi">Cổng nhân viên y tế · Truy cập có kiểm soát</span>
+          <span class="lang-en">Healthcare Staff Portal · Controlled access</span>
+        </p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer">
+        <a href="#privacy">
+          <span class="lang-vi">Quyền riêng tư</span>
+          <span class="lang-en">Privacy</span>
+        </a>
+        <a href="#security">
+          <span class="lang-vi">Bảo mật</span>
+          <span class="lang-en">Security</span>
+        </a>
+      </nav>
+
+      <p class="footer-disclaimer">
+        <span class="lang-vi">MediLink là dự án prototype. Chỉ nhân viên được ủy quyền mới được truy cập hồ sơ. Không lưu thông tin y tế nhạy cảm trên...</span>
+        <span class="lang-en">MediLink is a prototype. Only authorized staff may access records. Sensitive medical data is never stored on chain. All ...
+      </p>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
