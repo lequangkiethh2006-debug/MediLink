@@ -3,18 +3,21 @@ MediLink — Flask backend (prototype)
 app.py
 
 Serves patient portal, staff portal and login.
-Demo authentication only. OCR / SBAR / consent / blockchain
-endpoints return honest unavailable or prototype responses
-until real services are configured.
+Demo authentication only. OCR runs locally; SBAR / consent / blockchain
+endpoints remain prototypes until real services are configured.
 """
 
 import os
 import re
 import uuid
 import secrets
+import unicodedata
+import warnings
 from datetime import datetime, timezone
 from functools import wraps
+from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 from flask import (
     Flask,
@@ -27,9 +30,18 @@ from flask import (
     jsonify,
     abort,
 )
+from PIL import Image, UnidentifiedImageError
+import pytesseract
+from pytesseract import TesseractError, TesseractNotFoundError
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+
+# Use the locally installed Windows Tesseract program. Uploaded files are not
+# sent to any external service.
+pytesseract.pytesseract.tesseract_cmd = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
 
 # ---------------------------------------------------------------------------
 # Environment & app setup
@@ -153,6 +165,225 @@ def safe_upload_filename(original: str) -> str:
     return f"{uuid.uuid4().hex}{ext}"
 
 
+def _normalize_medical_text(text: str) -> str:
+    """Normalize accents and spacing so English/Vietnamese labels are easier to match."""
+    normalized = unicodedata.normalize("NFKD", text)
+    without_accents = "".join(
+        character for character in normalized
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r"\s+", " ", without_accents).upper()
+
+
+def _confirmation(field: str, reason: str) -> dict:
+    return {"field": field, "reason": reason}
+
+
+def _parse_test_date(text: str, confirmations: list) -> Optional[str]:
+    """Extract only a date next to an explicit test-date label."""
+    normalized = _normalize_medical_text(text)
+    date_pattern = (
+        r"(?P<date>\d{4}[-/.]\d{1,2}[-/.]\d{1,2}"
+        r"|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})"
+    )
+    label_pattern = re.compile(
+        r"(?:NGAY\s+(?:XET\s+NGHIEM|LAY\s+MAU|TRA\s+KET\s+QUA)"
+        r"|TEST\s+DATE|EXAMINATION\s+DATE"
+        r"|DATE\s+OF\s+(?:TEST|EXAM))\s*[:\-]?\s*"
+        + date_pattern,
+        re.IGNORECASE,
+    )
+    found_dates = list(dict.fromkeys(
+        match.group("date") for match in label_pattern.finditer(normalized)
+    ))
+    if len(found_dates) > 1:
+        confirmations.append(_confirmation(
+            "test_date",
+            "More than one date is labelled as a test date; please verify the correct one.",
+        ))
+        return None
+    if not found_dates:
+        confirmations.append(_confirmation(
+            "test_date",
+            "No date next to a recognized test-date label was found.",
+        ))
+        return None
+
+    date_value = found_dates[0]
+    if not re.match(r"^\d{4}", date_value):
+        parts = re.split(r"[-/.]", date_value)
+        if len(parts) == 3 and parts[0] != parts[1]:
+            first, second = int(parts[0]), int(parts[1])
+            if first <= 12 and second <= 12:
+                confirmations.append(_confirmation(
+                    "test_date",
+                    "The date order could be day/month or month/day; please verify it.",
+                ))
+                return None
+    return date_value
+
+
+def _parse_lab_row(line: str):
+    """Parse one conservative lab-table row, or return None if it does not match."""
+    number = r"(?:[<>]=?|[≤≥])?\s*\d+(?:[.,]\d+)?"
+    unit = r"(?:10\^?\d+/(?:L|ML)|[A-Zµμ]+(?:\^?\d+)?(?:/[A-Zµμ0-9^]+)?|%)"
+    reference = (
+        r"(?:[<>]=?|[≤≥])?\s*\d+(?:[.,]\d+)?"
+        r"(?:\s*(?:-|–|—|TO)\s*\d+(?:[.,]\d+)?)?"
+    )
+    prefix = r"^\s*(?:\d+\s+)?"
+    missing_result = re.match(
+        prefix
+        + r"(?P<name>[^:|]+?)\s+(?P<unit>"
+        + unit
+        + r")(?:\s+(?P<reference>"
+        + reference
+        + r"))?\s*$",
+        line,
+        re.IGNORECASE,
+    )
+    if missing_result:
+        name = missing_result.group("name").strip()
+        if name and not re.search(r"\d", name):
+            return {
+                "name": name,
+                "result_value": None,
+                "unit": missing_result.group("unit").strip(),
+                "reference_range": (
+                    (missing_result.group("reference") or "").strip() or None
+                ),
+            }
+
+    result_row = re.match(
+        prefix
+        + r"(?P<name>[^:|]+?)\s+(?P<result>"
+        + number
+        + r")(?:\s+(?P<unit>"
+        + unit
+        + r"))?(?:\s+(?P<reference>"
+        + reference
+        + r"))?\s*$",
+        line,
+        re.IGNORECASE,
+    )
+    if result_row:
+        name = result_row.group("name").strip()
+        if not name or re.search(r"\d", name):
+            return None
+        return {
+            "name": name,
+            "result_value": (result_row.group("result") or "").strip() or None,
+            "unit": (result_row.group("unit") or "").strip() or None,
+            "reference_range": (result_row.group("reference") or "").strip() or None,
+        }
+
+    return None
+
+
+def _parse_lab_tests(text: str, confirmations: list) -> list:
+    """Extract obvious lab rows and flag values that are absent or conflicting."""
+    header_words = (
+        "STT", "NO ", "INDEX", "TEN XET NGHIEM", "TEST NAME",
+        "RESULT", "KET QUA", "DON VI", "UNIT", "GIA TRI THAM CHIEU",
+        "REFERENCE RANGE", "LAB REPORT", "LABORATORY REPORT",
+        "PHIEU KET QUA XET NGHIEM", "TEST RESULTS",
+    )
+    rows_by_name = {}
+
+    for line in text.splitlines():
+        normalized_line = _normalize_medical_text(line).strip()
+        if not normalized_line or any(
+            normalized_line.startswith(word) for word in header_words
+        ):
+            continue
+        row = _parse_lab_row(line)
+        if not row:
+            continue
+
+        name_key = _normalize_medical_text(row["name"])
+        if name_key not in rows_by_name:
+            rows_by_name[name_key] = row
+            continue
+
+        existing = rows_by_name[name_key]
+        for field in ("result_value", "unit", "reference_range"):
+            if existing[field] != row[field]:
+                existing[field] = None
+                confirmations.append(_confirmation(
+                    f"tests.{row['name']}.{field}",
+                    "Multiple different values were found for this test; please verify the original.",
+                ))
+
+    tests = list(rows_by_name.values())
+    if not tests:
+        confirmations.append(_confirmation(
+            "tests",
+            "No laboratory test rows could be confidently parsed.",
+        ))
+        return tests
+
+    confirmed_fields = {
+        item["field"] for item in confirmations
+    }
+    for test in tests:
+        for field in ("result_value", "unit", "reference_range"):
+            confirmation_field = f"tests.{test['name']}.{field}"
+            if test[field] is None and confirmation_field not in confirmed_fields:
+                confirmations.append(_confirmation(
+                    confirmation_field,
+                    f"The {field.replace('_', ' ')} is missing or could not be confidently read.",
+                ))
+                confirmed_fields.add(confirmation_field)
+    return tests
+
+
+def parse_medical_text(text: str) -> dict:
+    """Return conservative structured fields without guessing unclear values."""
+    normalized = _normalize_medical_text(text)
+    is_laboratory_report = bool(re.search(
+        r"\b(?:PHIEU\s+KET\s+QUA\s+XET\s+NGHIEM"
+        r"|KET\s+QUA\s+XET\s+NGHIEM"
+        r"|LABORATORY\s+REPORT|LAB\s+REPORT|TEST\s+RESULTS)\b",
+        normalized,
+    ))
+    is_referral = bool(re.search(
+        r"\b(?:GIAY\s+CHUYEN\s+TUYEN|GIAY\s+GIOI\s+THIEU"
+        r"|REFERRAL(?:\s+LETTER|\s+DOCUMENT)?)\b",
+        normalized,
+    ))
+
+    confirmations = []
+    if is_laboratory_report == is_referral:
+        document_type = None
+        confirmations.append(_confirmation(
+            "document_type",
+            "The document type is missing, unclear, or matches conflicting document labels.",
+        ))
+        return {
+            "document_type": document_type,
+            "test_date": None,
+            "tests": [],
+            "fields_requiring_confirmation": confirmations,
+        }
+
+    if is_referral:
+        return {
+            "document_type": "referral",
+            "test_date": None,
+            "tests": [],
+            "fields_requiring_confirmation": [],
+        }
+
+    test_date = _parse_test_date(text, confirmations)
+    tests = _parse_lab_tests(text, confirmations)
+    return {
+        "document_type": "laboratory_report",
+        "test_date": test_date,
+        "tests": tests,
+        "fields_requiring_confirmation": confirmations,
+    }
+
+
 def current_user():
     """Minimal user info for templates (never includes password)."""
     if not session.get("user_id"):
@@ -256,15 +487,16 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# API — OCR upload (prototype / unavailable)
+# API — local OCR upload (images only)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/ocr", methods=["POST"])
 def api_ocr():
-    """
-    Accept a document upload and return a structured response.
-    No OCR engine is configured in this prototype — returns unavailable.
-    """
+    """Run local English and Vietnamese OCR on an authenticated image upload."""
+    # API clients need a JSON error, not the HTML login-page redirect.
+    if not session.get("user_id"):
+        return json_error("Please sign in to use OCR.", "AUTH_REQUIRED", 401)
+
     if "document" not in request.files and "file" not in request.files:
         return json_error("No file provided", "NO_FILE", 400)
 
@@ -272,33 +504,96 @@ def api_ocr():
     if not file or file.filename == "":
         return json_error("Empty filename", "EMPTY_FILE", 400)
 
-    mime = file.mimetype or ""
-    if not allowed_file(file.filename, mime):
+    extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if extension == "pdf":
         return json_error(
-            "Unsupported file type. Allowed: PDF, JPG, PNG.",
+            "PDF uploads are not supported yet. Please use a JPG, JPEG, or PNG image.",
+            "PDF_NOT_SUPPORTED",
+            400,
+        )
+    if extension not in {"jpg", "jpeg", "png"}:
+        return json_error(
+            "Unsupported file type. Allowed: JPG, JPEG, PNG.",
             "INVALID_TYPE",
             400,
         )
 
-    # Save outside static/ with a safe name
-    filename = safe_upload_filename(file.filename)
-    dest = UPLOAD_DIR / filename
     try:
-        file.save(dest)
+        # Keep the upload in memory and enforce a size limit before decoding it.
+        image_bytes = file.stream.read(app.config["MAX_CONTENT_LENGTH"] + 1)
     except OSError:
-        return json_error("Could not store file", "STORAGE_ERROR", 500)
+        return json_error("Could not read uploaded file.", "FILE_READ_ERROR", 400)
 
-    # OCR engine not configured — honest response
-    # Do NOT invent extracted medical data
+    if not image_bytes:
+        return json_error("The uploaded file is empty.", "EMPTY_FILE", 400)
+    if len(image_bytes) > app.config["MAX_CONTENT_LENGTH"]:
+        return json_error("File too large (max 10 MB).", "FILE_TOO_LARGE", 413)
+
+    try:
+        # verify() checks the file structure; load() decodes the image pixels.
+        # Treat Pillow's large-image warning as an error to avoid excessive use
+        # of memory while handling untrusted uploads.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(image_bytes)) as uploaded_image:
+                actual_format = uploaded_image.format
+                uploaded_image.verify()
+
+            expected_format = "PNG" if extension == "png" else "JPEG"
+            if actual_format != expected_format:
+                return json_error(
+                    "The image content does not match its filename extension.",
+                    "INVALID_CONTENT",
+                    400,
+                )
+
+            with Image.open(BytesIO(image_bytes)) as uploaded_image:
+                uploaded_image.load()
+                # Tesseract works reliably with a standard RGB image.
+                image_for_ocr = uploaded_image.convert("RGB")
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        UnidentifiedImageError,
+        OSError,
+        SyntaxError,
+        ValueError,
+    ):
+        return json_error(
+            "The uploaded image is corrupt, unreadable, or too large to process.",
+            "INVALID_CONTENT",
+            400,
+        )
+
+    try:
+        # Return only the text recognized by OCR; do not infer medical facts.
+        extracted_text = pytesseract.image_to_string(
+            image_for_ocr,
+            lang="eng+vie",
+            timeout=30,
+        )
+        if not extracted_text.strip():
+            return json_error(
+                "No readable text could be extracted from the image.",
+                "OCR_NO_TEXT",
+                422,
+            )
+    except (TesseractNotFoundError, TesseractError, OSError, RuntimeError):
+        return json_error(
+            "Local OCR could not process this image. Check the Tesseract installation and language data.",
+            "OCR_FAILED",
+            503,
+        )
+    finally:
+        image_for_ocr.close()
+
     return json_success(
-        message="File received. OCR engine is not configured (prototype).",
+        message="OCR completed. Please verify the recognized text against the original image.",
         data={
-            "filename": filename,
-            "ocr_available": False,
-            "extracted": None,
-            "note": "Configure an OCR service and replace this stub to return real results.",
+            "ocr_available": True,
+            "extracted": extracted_text,
+            "structured": parse_medical_text(extracted_text),
         },
-        status=202,
     )
 
 
