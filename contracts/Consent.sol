@@ -2,355 +2,138 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title MediLink Consent & SBAR Audit
- * @author MediLink Prototype
- * @notice Minimal consent-state and SBAR audit-hash contract for Avalanche Fuji.
- * @dev This is a prototype. It does NOT store medical records, names, citizen IDs,
- *      phone numbers, diagnoses or laboratory results. Backend authorization and
- *      professional identity verification remain mandatory off-chain.
+ * @title MediLink Consent
+ * @notice Demonstration contract for granting, revoking, and checking
+ *         permission to share an off-chain medical-record reference.
  *
- * Target network: Avalanche Fuji (chainId 43113 / 0xA869)
- * Compiler: Solidity 0.8.20+
+ * @dev PRIVACY: this contract must never store patient names, dates of birth,
+ *      diagnoses, examination results, laboratory values, images, or any other
+ *      sensitive medical information. Only a non-identifying record reference
+ *      is accepted. That reference is also written to public event logs, so it
+ *      must be an opaque identifier (for example, a random ID or a hash) that
+ *      does not contain personal information.
+ *
+ *      This is a prototype for the MediLink demo. It is not a production
+ *      healthcare consent-management system and does not by itself prove that
+ *      a patient gave legally valid consent.
+ *
+ *      A consent is identified by the combination:
+ *          (consent owner, recipient, record reference)
+ *
+ *      Rules:
+ *      - The caller of grantConsent becomes the consent owner.
+ *      - Granting the same consent while it is already active reverts.
+ *      - Revoking an unknown or already-revoked consent reverts.
+ *      - A revoked consent may be granted again later. This reactivates the
+ *        same consent and emits a new ConsentGranted event.
  */
-
 contract Consent {
-    // -------------------------------------------------------------------------
-    // Types
-    // -------------------------------------------------------------------------
-
     struct ConsentRecord {
-        address grantor;           // who granted consent
-        address recipient;         // who is authorized to access
-        bytes32 recordRef;         // pseudonymous reference / hash of off-chain record
-        bytes32 scope;             // permission scope (e.g. keccak256("read-referral"))
-        uint64 createdAt;          // block timestamp at creation
-        uint64 expiresAt;          // expiry timestamp (0 = no expiry)
-        bool active;               // false after revocation
-        bool exists;               // true once created
+        bool exists; // true after the first grant
+        bool active; // true while the consent is active
     }
 
-    struct SbarAudit {
-        bytes32 handoverRef;       // unique handover identifier (hash or ID)
-        bytes32 reportHash;        // keccak256 of finalized off-chain SBAR content
-        address submitter;         // staff wallet that submitted the hash
-        uint64 timestamp;          // block timestamp
-        bool exists;
-    }
-
-    // -------------------------------------------------------------------------
-    // State
-    // -------------------------------------------------------------------------
-
-    address public owner;
-
-    /// @dev consentId => ConsentRecord
+    /// @dev Hash of (consent owner, recipient, record reference) => state.
     mapping(bytes32 => ConsentRecord) private _consents;
 
-    /// @dev handoverRef => SbarAudit
-    mapping(bytes32 => SbarAudit) private _sbarAudits;
+    // `owner` and `recipient` are indexed so the frontend can filter events.
+    // `recordRef` is a dynamic string, so it is emitted as plain event data.
 
-    /// @dev staff allowlist (demonstration role management)
-    mapping(address => bool) private _staff;
-
-    // -------------------------------------------------------------------------
-    // Events (minimal, no PHI)
-    // -------------------------------------------------------------------------
-
+    /// @notice Emitted when a consent owner grants permission.
     event ConsentGranted(
-        bytes32 indexed consentId,
-        address indexed grantor,
+        address indexed owner,
         address indexed recipient,
-        bytes32 recordRef,
-        bytes32 scope,
-        uint64 expiresAt
+        string recordRef
     );
 
+    /// @notice Emitted when a consent owner revokes permission.
     event ConsentRevoked(
-        bytes32 indexed consentId,
-        address indexed revokedBy,
-        uint64 timestamp
+        address indexed owner,
+        address indexed recipient,
+        string recordRef
     );
 
-    event StaffUpdated(
-        address indexed staff,
-        bool authorized,
-        address indexed updatedBy
-    );
-
-    event SbarRecorded(
-        bytes32 indexed handoverRef,
-        bytes32 reportHash,
-        address indexed submitter,
-        uint64 timestamp
-    );
-
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
-
-    // -------------------------------------------------------------------------
-    // Custom errors
-    // -------------------------------------------------------------------------
-
-    error NotOwner();
-    error NotStaff();
-    error NotAuthorized();
-    error InvalidAddress();
-    error InvalidExpiry();
+    error InvalidRecipient();
+    error EmptyRecordRef();
+    error ConsentAlreadyActive();
     error ConsentNotFound();
-    error ConsentInactive();
-    error ConsentExpired();
-    error ConsentAlreadyExists();
-    error SbarAlreadyExists();
-    error ZeroHash();
-
-    // -------------------------------------------------------------------------
-    // Modifiers
-    // -------------------------------------------------------------------------
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
-    }
-
-    modifier onlyStaff() {
-        if (!_staff[msg.sender] && msg.sender != owner) revert NotStaff();
-        _;
-    }
-
-    // -------------------------------------------------------------------------
-    // Constructor
-    // -------------------------------------------------------------------------
-
-    constructor() {
-        owner = msg.sender;
-        _staff[msg.sender] = true; // deployer is initial staff
-        emit StaffUpdated(msg.sender, true, msg.sender);
-        emit OwnershipTransferred(address(0), msg.sender);
-    }
-
-    // -------------------------------------------------------------------------
-    // Ownership & staff management
-    // -------------------------------------------------------------------------
+    error ConsentAlreadyRevoked();
 
     /**
-     * @notice Transfer contract ownership.
-     * @param newOwner Address of the new owner (must be non-zero).
+     * @notice Grant permission to `recipient` for one record reference.
+     * @dev The caller (msg.sender) is the consent owner. If this consent was
+     *      revoked before, calling this function again reactivates it.
+     * @param recipient Address allowed to access the record reference.
+     * @param recordRef Non-identifying reference to the off-chain record.
      */
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert InvalidAddress();
-        address previous = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(previous, newOwner);
-    }
+    function grantConsent(address recipient, string calldata recordRef) external {
+        if (recipient == address(0)) revert InvalidRecipient();
+        if (bytes(recordRef).length == 0) revert EmptyRecordRef();
 
-    /**
-     * @notice Add or remove an authorized staff address.
-     * @dev Only the owner may call this. Staff cannot self-register.
-     * @param staff Address to update.
-     * @param authorized True to grant staff role, false to revoke.
-     */
-    function setStaff(address staff, bool authorized) external onlyOwner {
-        if (staff == address(0)) revert InvalidAddress();
-        _staff[staff] = authorized;
-        emit StaffUpdated(staff, authorized, msg.sender);
-    }
+        bytes32 key = _consentKey(msg.sender, recipient, recordRef);
+        ConsentRecord storage consent = _consents[key];
 
-    /**
-     * @notice Check whether an address is on the staff allowlist.
-     */
-    function isStaff(address account) external view returns (bool) {
-        return _staff[account] || account == owner;
-    }
+        // Reject duplicate active grants. After a revocation, exists is true
+        // but active is false, so the consent can be granted again.
+        if (consent.active) revert ConsentAlreadyActive();
 
-    // -------------------------------------------------------------------------
-    // Consent — grant
-    // -------------------------------------------------------------------------
-
-    /**
-     * @notice Create a consent record.
-     * @dev Caller becomes the grantor. Does not accept medical data.
-     * @param consentId Unique identifier chosen by the caller (e.g. keccak256 of off-chain token).
-     * @param recipient Address authorized to act under this consent.
-     * @param recordRef Pseudonymous reference or hash of the off-chain record.
-     * @param scope Permission scope (e.g. keccak256("read-referral")).
-     * @param expiresAt Unix timestamp when consent ends (0 = no expiry). Must be in the future if non-zero.
-     */
-    function grantConsent(
-        bytes32 consentId,
-        address recipient,
-        bytes32 recordRef,
-        bytes32 scope,
-        uint64 expiresAt
-    ) external {
-        if (consentId == bytes32(0)) revert ZeroHash();
-        if (recipient == address(0)) revert InvalidAddress();
-        if (recordRef == bytes32(0)) revert ZeroHash();
-        if (scope == bytes32(0)) revert ZeroHash();
-        if (_consents[consentId].exists) revert ConsentAlreadyExists();
-        if (expiresAt != 0 && expiresAt <= block.timestamp) revert InvalidExpiry();
-
-        _consents[consentId] = ConsentRecord({
-            grantor: msg.sender,
-            recipient: recipient,
-            recordRef: recordRef,
-            scope: scope,
-            createdAt: uint64(block.timestamp),
-            expiresAt: expiresAt,
-            active: true,
-            exists: true
-        });
-
-        emit ConsentGranted(
-            consentId,
-            msg.sender,
-            recipient,
-            recordRef,
-            scope,
-            expiresAt
-        );
-    }
-
-    // -------------------------------------------------------------------------
-    // Consent — revoke
-    // -------------------------------------------------------------------------
-
-    /**
-     * @notice Revoke an existing consent.
-     * @dev Only the original grantor or the contract owner may revoke.
-     *      Repeated revocation is a no-op success (idempotent).
-     * @param consentId The consent to revoke.
-     */
-    function revokeConsent(bytes32 consentId) external {
-        ConsentRecord storage c = _consents[consentId];
-        if (!c.exists) revert ConsentNotFound();
-
-        if (msg.sender != c.grantor && msg.sender != owner) {
-            revert NotAuthorized();
+        // Only write `exists` on the first grant. Re-granting a revoked
+        // consent only needs to flip `active` back to true.
+        if (!consent.exists) {
+            consent.exists = true;
         }
+        consent.active = true;
 
-        if (c.active) {
-            c.active = false;
-            emit ConsentRevoked(consentId, msg.sender, uint64(block.timestamp));
-        }
-        // if already inactive, silently succeed (safe repeated call)
+        emit ConsentGranted(msg.sender, recipient, recordRef);
     }
 
-    // -------------------------------------------------------------------------
-    // Consent — verify (read-only)
-    // -------------------------------------------------------------------------
+    /**
+     * @notice Revoke a consent previously granted by the caller.
+     * @dev The key includes msg.sender, so a caller can only revoke a consent
+     *      that they themselves granted. Revoking twice reverts.
+     * @param recipient The recipient named in the original grant.
+     * @param recordRef The record reference named in the original grant.
+     */
+    function revokeConsent(address recipient, string calldata recordRef) external {
+        bytes32 key = _consentKey(msg.sender, recipient, recordRef);
+        ConsentRecord storage consent = _consents[key];
+
+        if (!consent.exists) revert ConsentNotFound();
+        if (!consent.active) revert ConsentAlreadyRevoked();
+
+        consent.active = false;
+
+        emit ConsentRevoked(msg.sender, recipient, recordRef);
+    }
 
     /**
-     * @notice Check whether a consent is currently valid for the given parameters.
-     * @param consentId Consent identifier.
-     * @param recipient Address that is requesting access.
-     * @param recordRef Expected record reference.
-     * @param scope Expected permission scope.
-     * @return valid True only if the consent exists, is active, not expired,
-     *         and matches recipient, recordRef and scope.
+     * @notice Read the consent state for an owner, recipient, and record.
+     * @dev This is a view function: the frontend can call it without sending
+     *      a transaction or paying gas.
+     * @param consentOwner Address that granted the consent.
+     * @param recipient Address named in the consent.
+     * @param recordRef Non-identifying record reference.
+     * @return exists True if this consent has ever been granted.
+     * @return active True if the consent is currently active.
      */
-    function verifyConsent(
-        bytes32 consentId,
+    function getConsentStatus(
+        address consentOwner,
         address recipient,
-        bytes32 recordRef,
-        bytes32 scope
-    ) external view returns (bool valid) {
-        ConsentRecord storage c = _consents[consentId];
+        string calldata recordRef
+    ) external view returns (bool exists, bool active) {
+        ConsentRecord storage consent = _consents[
+            _consentKey(consentOwner, recipient, recordRef)
+        ];
 
-        if (!c.exists) return false;
-        if (!c.active) return false;
-        if (c.expiresAt != 0 && block.timestamp > c.expiresAt) return false;
-        if (c.recipient != recipient) return false;
-        if (c.recordRef != recordRef) return false;
-        if (c.scope != scope) return false;
-
-        return true;
+        return (consent.exists, consent.active);
     }
 
-    /**
-     * @notice Return the full consent record (for authorized off-chain indexing).
-     * @dev Does not contain medical data. Anyone can read; authorization is enforced off-chain.
-     */
-    function getConsent(bytes32 consentId)
-        external
-        view
-        returns (
-            address grantor,
-            address recipient,
-            bytes32 recordRef,
-            bytes32 scope,
-            uint64 createdAt,
-            uint64 expiresAt,
-            bool active,
-            bool exists
-        )
-    {
-        ConsentRecord storage c = _consents[consentId];
-        return (
-            c.grantor,
-            c.recipient,
-            c.recordRef,
-            c.scope,
-            c.createdAt,
-            c.expiresAt,
-            c.active,
-            c.exists
-        );
-    }
-
-    // -------------------------------------------------------------------------
-    // SBAR audit evidence
-    // -------------------------------------------------------------------------
-
-    /**
-     * @notice Record a hash of a finalized SBAR handover report.
-     * @dev Only staff (or owner) may call. Stores hash only — never the report text.
-     * @param handoverRef Unique reference for this handover (e.g. keccak256 of off-chain ID).
-     * @param reportHash keccak256 of the finalized SBAR content (computed off-chain).
-     */
-    function recordSbar(bytes32 handoverRef, bytes32 reportHash) external onlyStaff {
-        if (handoverRef == bytes32(0)) revert ZeroHash();
-        if (reportHash == bytes32(0)) revert ZeroHash();
-        if (_sbarAudits[handoverRef].exists) revert SbarAlreadyExists();
-
-        _sbarAudits[handoverRef] = SbarAudit({
-            handoverRef: handoverRef,
-            reportHash: reportHash,
-            submitter: msg.sender,
-            timestamp: uint64(block.timestamp),
-            exists: true
-        });
-
-        emit SbarRecorded(handoverRef, reportHash, msg.sender, uint64(block.timestamp));
-    }
-
-    /**
-     * @notice Read an SBAR audit record.
-     */
-    function getSbar(bytes32 handoverRef)
-        external
-        view
-        returns (
-            bytes32 reportHash,
-            address submitter,
-            uint64 timestamp,
-            bool exists
-        )
-    {
-        SbarAudit storage s = _sbarAudits[handoverRef];
-        return (s.reportHash, s.submitter, s.timestamp, s.exists);
-    }
-
-    // -------------------------------------------------------------------------
-    // Utility
-    // -------------------------------------------------------------------------
-
-    /**
-     * @notice Helper to compute a scope hash off-chain-friendly description.
-     * @dev Pure convenience; callers may also compute keccak256 themselves.
-     */
-    function scopeHash(string calldata scopeLabel) external pure returns (bytes32) {
-        return keccak256(bytes(scopeLabel));
+    /// @dev Build a unique mapping key. abi.encode avoids ambiguous packing.
+    function _consentKey(
+        address consentOwner,
+        address recipient,
+        string memory recordRef
+    ) private pure returns (bytes32) {
+        return keccak256(abi.encode(consentOwner, recipient, recordRef));
     }
 }
