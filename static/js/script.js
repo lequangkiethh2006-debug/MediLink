@@ -45,24 +45,20 @@
     container.className = 'status-area';
     const msg = document.createElement('p');
     msg.className = `status-msg status-msg--${type}`;
-    msg.innerHTML =
-      `<span class="lang-vi">${messageVi}</span>` +
-      `<span class="lang-en">${messageEn}</span>`;
-    container.innerHTML = '';
+    const vi = document.createElement('span');
+    vi.className = 'lang-vi';
+    vi.textContent = messageVi;
+    const en = document.createElement('span');
+    en.className = 'lang-en';
+    en.textContent = messageEn;
+    msg.append(vi, en);
+    container.replaceChildren();
     container.appendChild(msg);
   }
 
   function disableBtn(btn, disabled = true) {
     if (!exists(btn)) return;
     btn.disabled = !!disabled;
-  }
-
-  function safeJsonParse(text) {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return null;
-    }
   }
 
   /* ================================================================
@@ -585,6 +581,10 @@
     const btnSubmit = $('#btn-sbar-submit');
     const status = $('#sbar-status');
     if (!exists(form)) return;
+    const handoverId = $('#sbar-handover-id');
+    const csrfToken = $('#sbar-csrf-token');
+    const historyBody = $('#sbar-history-body');
+    let requestInFlight = false;
 
     function collectFields() {
       return {
@@ -593,82 +593,722 @@
         background: ($('#sbar-background') || {}).value || '',
         assessment: ($('#sbar-assessment') || {}).value || '',
         recommendation: ($('#sbar-recommendation') || {}).value || '',
+        handover_id: handoverId ? handoverId.value : '',
+        csrf_token: csrfToken ? csrfToken.value : '',
       };
     }
 
-    function validateSbar(data) {
-      if (!data.situation.trim() || !data.assessment.trim() || !data.recommendation.trim()) {
-        return false;
-      }
-      return true;
+    function languageText(viText, enText, className) {
+      const vi = document.createElement('span');
+      vi.className = 'lang-vi';
+      vi.textContent = viText;
+      const en = document.createElement('span');
+      en.className = 'lang-en';
+      en.textContent = enText;
+      const container = document.createElement('span');
+      if (className) container.className = className;
+      container.append(vi, en);
+      return container;
     }
 
-    if (exists(btnDraft)) {
-      btnDraft.addEventListener('click', () => {
-        const data = collectFields();
-        // Prototype: local only — no server call assumed
-        showStatus(
-          status,
-          'Nháp đã lưu cục bộ (prototype — chưa gửi máy chủ).',
-          'Draft saved locally (prototype — not sent to server).',
-          'idle'
-        );
-        try {
-          sessionStorage.setItem('medilink-sbar-draft', JSON.stringify(data));
-        } catch {
-          /* ignore */
-        }
-      });
+    function appendHistoryMessage(viText, enText) {
+      if (!exists(historyBody)) return;
+      const row = document.createElement('tr');
+      row.id = 'sbar-history-empty';
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.className = 'empty-cell';
+      cell.appendChild(languageText(viText, enText));
+      row.appendChild(cell);
+      historyBody.replaceChildren(row);
     }
 
-    form.addEventListener('submit', (e) => {
-      e.preventDefault(); // Prevent real submit until backend exists
-      const data = collectFields();
-      if (!validateSbar(data)) {
-        showStatus(
-          status,
-          'Vui lòng điền Situation, Assessment và Recommendation.',
-          'Please fill Situation, Assessment and Recommendation.',
-          'error'
+    function formatHistoryTime(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      const locale = document.body.classList.contains('lang-en-active')
+        ? 'en-US'
+        : 'vi-VN';
+      return new Intl.DateTimeFormat(locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date);
+    }
+
+    function roleLabels(role) {
+      const labels = {
+        'shift-lead': ['Bác sĩ trưởng ca', 'Shift lead'],
+        treating: ['Bác sĩ điều trị', 'Treating physician'],
+        nurse: ['Điều dưỡng', 'Nurse'],
+      };
+      return labels[role] || [formatValue(role), formatValue(role)];
+    }
+
+    function statusLabels(value) {
+      if (value === 'draft') return ['Bản nháp', 'Draft'];
+      if (value === 'submitted') return ['Đã gửi', 'Submitted'];
+      return [formatValue(value), formatValue(value)];
+    }
+
+    function renderHistory(handovers) {
+      if (!exists(historyBody)) return;
+      if (!Array.isArray(handovers) || handovers.length === 0) {
+        appendHistoryMessage(
+          'Chưa có bàn giao nào được ghi nhận',
+          'No handovers recorded yet'
         );
         return;
       }
+
+      const rows = handovers.map((handover) => {
+        const row = document.createElement('tr');
+        const values = [
+          formatValue(handover.handover_id),
+          formatHistoryTime(handover.timestamp),
+          roleLabels(handover.staff_role),
+          statusLabels(handover.status),
+        ];
+        values.forEach((value, index) => {
+          const cell = document.createElement('td');
+          if (index < 2) {
+            cell.textContent = value;
+          } else {
+            cell.appendChild(languageText(value[0], value[1]));
+          }
+          row.appendChild(cell);
+        });
+        return row;
+      });
+      historyBody.replaceChildren(...rows);
+    }
+
+    function localizedApiMessage(error, fallbackVi, fallbackEn) {
+      const payload = error && error.payload;
+      if (payload && payload.message_vi && payload.message_en) {
+        return [payload.message_vi, payload.message_en];
+      }
+      return [fallbackVi, fallbackEn];
+    }
+
+    async function loadHistory() {
+      try {
+        const response = await fetchJson('/api/sbar', { method: 'GET' });
+        if (!response || response.success !== true || !response.data) {
+          throw apiError('Invalid handover history response.', 500, response);
+        }
+        renderHistory(response.data.handovers);
+      } catch (error) {
+        const message = localizedApiMessage(
+          error,
+          'Không thể tải lịch sử bàn giao. Vui lòng thử tải lại trang.',
+          'Could not load handover history. Please refresh the page.'
+        );
+        appendHistoryMessage(message[0], message[1]);
+      }
+    }
+
+    async function saveHandover(isDraft) {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      disableBtn(btnDraft, true);
       disableBtn(btnSubmit, true);
       showStatus(
         status,
-        'Prototype: bàn giao chưa được gửi. Cần endpoint backend để lưu.',
-        'Prototype: handover not submitted. Backend endpoint required.',
-        'idle'
+        isDraft ? 'Đang lưu bản nháp…' : 'Đang gửi bàn giao…',
+        isDraft ? 'Saving draft…' : 'Submitting handover…',
+        'processing'
       );
-      disableBtn(btnSubmit, false);
+
+      try {
+        const data = collectFields();
+        const response = await fetchJson(
+          isDraft ? '/api/sbar/drafts' : '/api/sbar',
+          {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': data.csrf_token },
+            body: JSON.stringify(data),
+          }
+        );
+        if (!response || response.success !== true || !response.data) {
+          throw apiError('The server did not confirm the handover.', 500, response);
+        }
+
+        if (isDraft && handoverId) {
+          handoverId.value = response.data.handover_id;
+        }
+        if (!isDraft) {
+          ['sbar-case-ref', 'sbar-situation', 'sbar-background',
+            'sbar-assessment', 'sbar-recommendation'].forEach((id) => {
+            const field = document.getElementById(id);
+            if (field) field.value = '';
+          });
+          if (handoverId) handoverId.value = '';
+        }
+
+        const message = [
+          response.message_vi || (isDraft ? 'Đã lưu bản nháp bàn giao.' : 'Đã gửi bàn giao thành công.'),
+          response.message_en || (isDraft ? 'Handover draft saved.' : 'Handover submitted successfully.'),
+        ];
+        showStatus(status, message[0], message[1], 'success');
+        await loadHistory();
+      } catch (error) {
+        const message = localizedApiMessage(
+          error,
+          'Không thể lưu bàn giao. Vui lòng kiểm tra kết nối và thử lại.',
+          'The handover could not be saved. Check your connection and try again.'
+        );
+        showStatus(status, message[0], message[1], 'error');
+      } finally {
+        requestInFlight = false;
+        disableBtn(btnDraft, false);
+        disableBtn(btnSubmit, false);
+      }
+    }
+
+    if (exists(btnDraft)) {
+      btnDraft.addEventListener('click', () => saveHandover(true));
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveHandover(false);
     });
 
-    // Restore draft if present
+    loadHistory();
+  }
+
+  /* ================================================================
+     11. HOSPITAL PORTAL — SHARED RECORD PACKET VIEWER
+     ================================================================ */
+
+  const PACKET_EXPLORER_BASE = 'https://testnet.snowtrace.io/tx/';
+  const PACKET_REQUEST_TIMEOUT_MS = 15000;
+
+  function apiError(message, status, payload) {
+    const error = new Error(message);
+    error.status = status;
+    error.payload = payload;
+    return error;
+  }
+
+  async function fetchJson(url, options = {}) {
+    const { headers = {}, ...rest } = options;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      PACKET_REQUEST_TIMEOUT_MS
+    );
+
     try {
-      const raw = sessionStorage.getItem('medilink-sbar-draft');
-      if (raw) {
-        const data = safeJsonParse(raw);
-        if (data) {
-          const map = {
-            'sbar-case-ref': data.case_ref,
-            'sbar-situation': data.situation,
-            'sbar-background': data.background,
-            'sbar-assessment': data.assessment,
-            'sbar-recommendation': data.recommendation,
-          };
-          Object.keys(map).forEach((id) => {
-            const el = document.getElementById(id);
-            if (exists(el) && map[id]) el.value = map[id];
-          });
-        }
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        ...rest,
+        headers: {
+          Accept: 'application/json',
+          ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
+          ...headers,
+        },
+        signal: controller.signal,
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const payload = isJson ? await response.json() : null;
+      const redirectedToLogin =
+        response.redirected && /\/login(?:$|[?#])/.test(response.url);
+
+      if (redirectedToLogin || (response.ok && !isJson)) {
+        throw apiError(
+          'Your session has expired. Please sign in again.',
+          401,
+          payload
+        );
       }
+
+      if (!response.ok) {
+        const message =
+          payload && (payload.message || payload.error)
+            ? payload.message || payload.error
+            : `Request failed (${response.status}).`;
+        throw apiError(message, response.status, payload);
+      }
+
+      return payload;
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw apiError('The request timed out. Please try again.', 408, null);
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  function formatValue(value, fallback = '—') {
+    if (value === null || value === undefined) return fallback;
+    const text = String(value).trim();
+    return text || fallback;
+  }
+
+  function slugify(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function setFieldValue(selector, value, fallback = '—') {
+    const el = $(selector);
+    if (!exists(el)) return;
+    el.textContent = formatValue(value, fallback);
+  }
+
+  function setPacketBadge(selector, value, fallbackType = 'neutral') {
+    const el = $(selector);
+    if (!exists(el)) return;
+
+    const label = formatValue(value, 'Unknown');
+    const normalized = slugify(label);
+    const badgeTypes = {
+      verified: 'success',
+      active: 'success',
+      complete: 'success',
+      completed: 'success',
+      normal: 'success',
+      pending: 'pending',
+      high: 'high',
+      low: 'low',
+      abnormal: 'abnormal',
+      inactive: 'failed',
+      revoked: 'failed',
+      failed: 'failed',
+      critical: 'critical',
+    };
+    const type = badgeTypes[normalized] || fallbackType;
+
+    el.textContent = label;
+    el.className = `record-badge record-badge--${type}`;
+  }
+
+  function showRevokedConsentAlert() {
+    const isEnglish = document.body.classList.contains('lang-en-active');
+    window.alert(
+      isEnglish
+        ? 'Consent has been revoked. Record access is no longer available.'
+        : 'Đồng thuận đã bị thu hồi. Không thể truy cập hồ sơ.'
+    );
+  }
+
+  function hidePacketView() {
+    setHidden($('#packet-content'), true);
+    setHidden($('#packet-empty'), false);
+    setHidden($('#record-access-lock'), false);
+  }
+
+  function getRecordIdFromContext(preferred) {
+    const preferredId = formatValue(preferred, '');
+    if (preferredId) return preferredId;
+
+    const panel = $('#packet-panel');
+    const panelRecordId = panel && panel.dataset ? panel.dataset.recordId : '';
+    if (panelRecordId && panelRecordId.trim()) return panelRecordId.trim();
+
+    try {
+      const queryId = new URLSearchParams(window.location.search).get('record_id');
+      if (queryId && queryId.trim()) return queryId.trim();
     } catch {
-      /* ignore */
+      /* ignore malformed URL */
+    }
+
+    const recordIdEl = $('#packet-record-id');
+    const displayedId = recordIdEl ? recordIdEl.textContent.trim() : '';
+    if (displayedId && displayedId !== '—' && displayedId !== '-') {
+      return displayedId;
+    }
+
+    return '';
+  }
+
+  function renderRecordTable(labResults) {
+    const table = $('#packet-record-table');
+    const tbody = table ? table.querySelector('tbody') : null;
+    if (!exists(tbody)) return;
+
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+    const rows = Array.isArray(labResults) ? labResults : [];
+    if (!rows.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.className = 'empty-cell';
+      const vi = document.createElement('span');
+      vi.className = 'lang-vi';
+      vi.textContent = 'Không có kết quả xét nghiệm.';
+      const en = document.createElement('span');
+      en.className = 'lang-en';
+      en.textContent = 'No laboratory results are available.';
+      td.appendChild(vi);
+      td.appendChild(en);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    rows.forEach((test) => {
+      if (!test || typeof test !== 'object') return;
+
+      const tr = document.createElement('tr');
+      const values = [
+        test.test_name || test.name || '—',
+        test.result !== undefined ? test.result : test.result_value,
+        test.unit,
+        test.reference_range || test.referenceRange,
+      ];
+
+      values.forEach((value) => {
+        const td = document.createElement('td');
+        td.textContent = formatValue(value);
+        tr.appendChild(td);
+      });
+
+      const statusTd = document.createElement('td');
+      const badge = document.createElement('span');
+      const status = formatValue(test.status, 'Unknown');
+      const statusType =
+        {
+          normal: 'success',
+          high: 'high',
+          low: 'low',
+          abnormal: 'abnormal',
+          critical: 'critical',
+          pending: 'pending',
+        }[slugify(status)] || 'neutral';
+      badge.className = `record-badge record-badge--${statusType}`;
+      badge.textContent = status;
+      statusTd.appendChild(badge);
+      tr.appendChild(statusTd);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderAuditTimeline(events) {
+    const timeline = $('#packet-audit-timeline');
+    if (!exists(timeline)) return;
+
+    while (timeline.firstChild) timeline.removeChild(timeline.firstChild);
+
+    const items = Array.isArray(events) ? events : [];
+    if (!items.length) {
+      const li = document.createElement('li');
+      li.className = 'audit-event audit-event--pending';
+      const marker = document.createElement('span');
+      marker.className = 'audit-event__marker';
+      marker.setAttribute('aria-hidden', 'true');
+      const content = document.createElement('div');
+      content.className = 'audit-event__content';
+      const title = document.createElement('h4');
+      title.className = 'audit-event__title';
+      title.textContent = 'No audit events recorded';
+      content.appendChild(title);
+      li.appendChild(marker);
+      li.appendChild(content);
+      timeline.appendChild(li);
+      return;
+    }
+
+    items.forEach((event) => {
+      if (!event || typeof event !== 'object') return;
+
+      const status = slugify(event.status || 'complete') || 'complete';
+      const li = document.createElement('li');
+      li.className = `audit-event audit-event--${status}`;
+
+      const marker = document.createElement('span');
+      marker.className = 'audit-event__marker';
+      marker.setAttribute('aria-hidden', 'true');
+
+      const content = document.createElement('div');
+      content.className = 'audit-event__content';
+
+      const head = document.createElement('div');
+      head.className = 'audit-event__head';
+
+      const title = document.createElement('h4');
+      title.className = 'audit-event__title';
+      title.textContent = formatValue(event.label || event.type, 'Audit Event');
+
+      const time = document.createElement('time');
+      time.className = 'audit-event__time';
+      time.textContent = formatValue(
+        event.time || event.timestamp || event.datetime
+      );
+      if (event.datetime) time.setAttribute('datetime', String(event.datetime));
+
+      head.appendChild(title);
+      head.appendChild(time);
+
+      const description = document.createElement('p');
+      description.className = 'audit-event__desc';
+      description.textContent = formatValue(event.description, '');
+
+      content.appendChild(head);
+      if (description.textContent) content.appendChild(description);
+
+      li.appendChild(marker);
+      li.appendChild(content);
+      timeline.appendChild(li);
+    });
+  }
+
+  function unlockRecordView(record, consent) {
+    if (!record || typeof record !== 'object') {
+      hidePacketView();
+      return false;
+    }
+
+    const consentActive =
+      consent && typeof consent.active === 'boolean'
+        ? consent.active === true
+        : record.consent_active === true || record.consent_status === 'Active';
+
+    if (!consentActive) {
+      hidePacketView();
+      return false;
+    }
+
+    setFieldValue('#packet-record-id', record.record_id || record.recordId);
+    setFieldValue('#packet-record-type', record.record_type || record.recordType);
+    setPacketBadge(
+      '#packet-verification-status',
+      record.verification_status || record.verificationStatus,
+      'pending'
+    );
+    setFieldValue(
+      '#packet-patient-id',
+      record.patient_identifier || record.patientIdentifier
+    );
+    setFieldValue('#packet-upload-date', record.uploaded_date || record.uploadDate);
+
+    setFieldValue('#packet-scope', record.consent_scope || record.scope, '');
+    setFieldValue('#packet-expiry', record.consent_expiry || record.expiry, '');
+
+    const consentStatus =
+      record.consent_status || (consentActive ? 'Active' : 'Inactive');
+    setFieldValue('#packet-consent', consentStatus);
+    setFieldValue(
+      '#packet-consent-scope',
+      record.consent_scope || record.scope,
+      ''
+    );
+    setFieldValue(
+      '#packet-consent-expiry',
+      record.consent_expiry || record.expiry,
+      ''
+    );
+
+    renderRecordTable(record.lab_results || record.labResults || []);
+    renderAuditTimeline(
+      record.audit_events || record.auditEvents || record.audit_timeline || []
+    );
+
+    const txHash = formatValue(record.tx_hash || record.txHash, '');
+    const txHashEl = $('#packet-tx-hash');
+    const txLink = $('#packet-tx-link');
+    const txState = $('#packet-tx-state');
+
+    if (exists(txHashEl)) txHashEl.textContent = txHash || '—';
+
+    if (exists(txLink)) {
+      if (txHash) {
+        txLink.href = `${PACKET_EXPLORER_BASE}${encodeURIComponent(txHash)}`;
+        setHidden(txLink, false);
+      } else {
+        txLink.removeAttribute('href');
+        setHidden(txLink, true);
+      }
+    }
+
+    if (exists(txState)) {
+      txState.className = txHash
+        ? 'tx-state tx-state--success'
+        : 'tx-state tx-state--idle';
+    }
+
+    setHidden($('#packet-empty'), true);
+    setHidden($('#record-access-lock'), true);
+    setHidden($('#packet-content'), false);
+    return true;
+  }
+
+  async function loadSharedRecord(recordId) {
+    const resolvedId = getRecordIdFromContext(recordId);
+    if (!resolvedId) {
+      throw apiError('Record ID is required.', 400, null);
+    }
+
+    const payload = await fetchJson(
+      `/api/shared-records/${encodeURIComponent(resolvedId)}`
+    );
+    const record =
+      payload && (payload.data || payload.record)
+        ? payload.data || payload.record
+        : payload;
+
+    if (!record || typeof record !== 'object' || !Object.keys(record).length) {
+      throw apiError('Shared record data is unavailable.', 502, payload);
+    }
+
+    return record;
+  }
+
+  async function verifyConsent(token) {
+    const inputEl = $('#consent-token-input');
+    const value = String(
+      token !== undefined && token !== null
+        ? token
+        : inputEl
+          ? inputEl.value
+          : ''
+    ).trim();
+
+    if (!value) {
+      throw apiError('Consent token is required.', 400, null);
+    }
+
+    let payload;
+    try {
+      payload = await fetchJson('/api/consent/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token: value }),
+      });
+    } catch (err) {
+      const code =
+        err && err.payload
+          ? err.payload.error_code || err.payload.error || ''
+          : '';
+      if (
+        err &&
+        err.status === 403 &&
+        ['CONSENT_INACTIVE', 'CONSENT_REVOKED', 'REVOKED'].includes(code)
+      ) {
+        showRevokedConsentAlert();
+        return {
+          exists: true,
+          active: false,
+          record_id: getRecordIdFromContext(value),
+        };
+      }
+      throw err;
+    }
+
+    const result =
+      payload && payload.data && typeof payload.data.active === 'boolean'
+        ? payload.data
+        : payload;
+    const exists = Boolean(result && result.exists === true);
+    const active = Boolean(result && result.active === true);
+    const recordId =
+      (result && (result.record_id || result.recordId)) ||
+      getRecordIdFromContext(value);
+
+    if (exists && !active) showRevokedConsentAlert();
+
+    return { exists, active, record_id: recordId };
+  }
+
+  async function handleSharedRecordAccess(rawToken) {
+    const inputEl = $('#consent-token-input');
+    const token = String(
+      rawToken !== undefined && rawToken !== null
+        ? rawToken
+        : inputEl
+          ? inputEl.value
+          : ''
+    ).trim();
+    const verifyStatus = $('#verify-status');
+    const verifyBtn = $('#btn-verify-token');
+
+    if (!token) {
+      showStatus(
+        verifyStatus,
+        'Vui lòng nhập token hoặc quét QR.',
+        'Please enter a token or scan a QR.',
+        'error'
+      );
+      hidePacketView();
+      return false;
+    }
+
+    showStatus(
+      verifyStatus,
+      'Đang xác minh đồng thuận…',
+      'Verifying consent…',
+      'processing'
+    );
+    disableBtn(verifyBtn, true);
+    hidePacketView();
+
+    try {
+      const consent = await verifyConsent(token);
+
+      if (!consent.exists) {
+        showStatus(
+          verifyStatus,
+          'Không tìm thấy đồng thuận cho token này.',
+          'No consent was found for this token.',
+          'error'
+        );
+        return false;
+      }
+
+      if (consent.active !== true) {
+        showStatus(
+          verifyStatus,
+          'Đồng thuận không còn hiệu lực. Hồ sơ vẫn bị khóa.',
+          'Consent is not active. The record remains locked.',
+          'error'
+        );
+        return false;
+      }
+
+      const record = await loadSharedRecord(consent.record_id || token);
+      if (!unlockRecordView(record, consent)) {
+        showStatus(
+          verifyStatus,
+          'Không thể mở hồ sơ vì đồng thuận không hoạt động.',
+          'Unable to unlock the record because consent is not active.',
+          'error'
+        );
+        return false;
+      }
+
+      showStatus(
+        verifyStatus,
+        'Đồng thuận hợp lệ. Hồ sơ đã được mở khóa.',
+        'Consent verified. The shared record has been unlocked.',
+        'success'
+      );
+      return true;
+    } catch (err) {
+      hidePacketView();
+      showStatus(
+        verifyStatus,
+        'Không thể tải hồ sơ. Vui lòng thử lại.',
+        err && err.message
+          ? err.message
+          : 'Unable to load the shared record. Please try again.',
+        'error'
+      );
+      return false;
+    } finally {
+      disableBtn(verifyBtn, false);
     }
   }
 
   /* ================================================================
-     11. HOSPITAL PORTAL — QR SCANNER & TOKEN VERIFY
+     12. HOSPITAL PORTAL — QR SCANNER & TOKEN VERIFY
      ================================================================ */
 
   let html5QrCodeInstance = null;
@@ -680,21 +1320,14 @@
     const tokenInput = $('#consent-token-input');
     const verifyStatus = $('#verify-status');
     const reader = $('#qr-reader');
-    const lock = $('#record-access-lock');
-    const packetEmpty = $('#packet-empty');
-    const packetContent = $('#packet-content');
     if (!exists(btnStart) && !exists(btnVerify)) return;
+
+    hidePacketView();
 
     function onScanSuccess(decodedText) {
       if (exists(tokenInput)) tokenInput.value = decodedText;
       stopScanner();
-      showStatus(
-        verifyStatus,
-        'Đã quét token. Đang chờ xác minh backend (prototype).',
-        'Token scanned. Awaiting backend verification (prototype).',
-        'idle'
-      );
-      // Do NOT unlock packet here — backend must confirm
+      handleSharedRecordAccess(decodedText);
     }
 
     function startScanner() {
@@ -757,30 +1390,9 @@
     if (exists(btnStart)) btnStart.addEventListener('click', startScanner);
     if (exists(btnStop)) btnStop.addEventListener('click', stopScanner);
 
-    // Manual token verify — prototype only
     if (exists(btnVerify)) {
       btnVerify.addEventListener('click', () => {
-        const token = (tokenInput && tokenInput.value.trim()) || '';
-        if (!token) {
-          showStatus(
-            verifyStatus,
-            'Vui lòng nhập token hoặc quét QR.',
-            'Please enter a token or scan a QR.',
-            'error'
-          );
-          return;
-        }
-        // No real backend call — keep packet locked
-        showStatus(
-          verifyStatus,
-          'Prototype: token chưa được xác minh bởi máy chủ. Gói hồ sơ vẫn bị khóa.',
-          'Prototype: token not verified by server. Packet remains locked.',
-          'idle'
-        );
-        // Explicitly keep locked
-        setHidden(lock, false);
-        setHidden(packetEmpty, false);
-        setHidden(packetContent, true);
+        handleSharedRecordAccess();
       });
     }
 
@@ -789,7 +1401,7 @@
   }
 
   /* ================================================================
-     12. BLOCKCHAIN AUDIT PANEL (staff)
+     13. BLOCKCHAIN AUDIT PANEL (staff)
      ================================================================ */
 
   function initAuditPanel() {
@@ -805,7 +1417,7 @@
   }
 
   /* ================================================================
-     13. INITIALIZATION
+     14. INITIALIZATION
      ================================================================ */
 
   function init() {

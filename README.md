@@ -64,8 +64,37 @@ The development server uses port `5000` by default. Open
 `http://127.0.0.1:5000/` in a browser. Keep the PowerShell window open while
 using the server; press `Ctrl+C` there to stop it.
 
+The root `app.py` is the project's Flask entry point and provides the login,
+patient and staff portals, OCR, records, consent, SBAR, and Blockchain APIs.
+Configure `PORT` in `.env` to use a port other than `5000`.
+
 The `.env` file is used for local configuration and may contain secrets. Do not
 share it or commit it. Keep secret values private.
+
+## Staff handovers
+
+Staff handover drafts and submissions are stored in SQLite at
+`instance/medilink.sqlite3` by default. The `instance` directory is created
+automatically and is excluded from Git. Set `MEDILINK_DATABASE` in `.env` to
+use a different SQLite file path.
+
+The staff-only API endpoints are:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/sbar/drafts` | Create or update the signed-in staff member's draft. |
+| `POST` | `/api/sbar` | Submit a complete handover or submit an existing draft. |
+| `GET` | `/api/sbar` | List summary-only history for the signed-in staff member. |
+
+POST requests require the session CSRF token. Submission requires Situation,
+Assessment, and Recommendation. Handover summaries do not include clinical
+text; draft changes and submissions are recorded in the handover audit table.
+
+Run the handover API tests with:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest -v test_sbar_api
+```
 
 ## Run the OCR tests
 

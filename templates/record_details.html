@@ -1,0 +1,351 @@
+{% set record_ref = record_id|default('REC-2026-000148') %}
+{% set record_kind = record_type|default('Laboratory Report') %}
+{% set uploaded_on = uploaded_date|default('08 Nov 2026, 09:21 UTC') %}
+{% set ocr_state = ocr_status|default('Completed') %}
+{% set verification_state = verification_status|default('Verified') %}
+{% set patient_ref = patient_identifier|default('PT-2026-0042') %}
+{% set referral_ref = referral_number|default('REF-2026-0117') %}
+{% set age_band = age_range|default('35–44') %}
+{% set shared_on = shared_date|default('08 Nov 2026, 09:35 UTC') %}
+{% set ocr_time = ocr_extraction_time|default('08 Nov 2026, 09:23 UTC') %}
+{% set ocr_confidence = ocr_confidence|default('98.4%') %}
+{% set ocr_text = extracted_text|default('PATIENT: PT-2026-0042
+TEST DATE: 2026-11-08
+LABORATORY REPORT
+
+Haemoglobin        13.8 g/dL    13.0 - 17.0
+White Blood Cells  7.2  10^9/L   4.0 - 11.0
+Platelets          248  10^9/L   150 - 400
+Fasting Glucose    92   mg/dL    70 - 99
+Creatinine         0.9  mg/dL    0.6 - 1.2') %}
+{% set consent_state = consent_status|default('Active') %}
+{% set contract_ref = contract_address|default('0x7A3f9C2bD4e5F6a7B8c9D0e1F2a3B4c5D6e7F8a9') %}
+{% set transaction_ref = tx_hash|default('0x9b1c4e7a2d5f8b3c6e9a1d4f7b0c3e6a8d2f5b7c9e1a4d6f8b0c3e5a7d9f1b2c') %}
+{% set wallet_state = wallet_status|default('Wallet: Not connected') %}
+
+{% set fallback_labs = [
+  {'test_name': 'Haemoglobin', 'result': '13.8', 'unit': 'g/dL', 'reference_range': '13.0 – 17.0', 'status': 'Normal'},
+  {'test_name': 'White Blood Cells', 'result': '7.2', 'unit': '10^9/L', 'reference_range': '4.0 – 11.0', 'status': 'Normal'},
+  {'test_name': 'Platelets', 'result': '248', 'unit': '10^9/L', 'reference_range': '150 – 400', 'status': 'Normal'},
+  {'test_name': 'Fasting Glucose', 'result': '92', 'unit': 'mg/dL', 'reference_range': '70 – 99', 'status': 'Normal'},
+  {'test_name': 'Creatinine', 'result': '0.9', 'unit': 'mg/dL', 'reference_range': '0.6 – 1.2', 'status': 'Normal'}
+] %}
+
+{% set fallback_events = [
+  {'label': 'Record Uploaded', 'time': '08 Nov 2026, 09:21 UTC', 'datetime': '2026-11-08T09:21:00Z', 'description': 'The medical record was uploaded to the MediLink hospital portal.', 'status': 'complete'},
+  {'label': 'OCR Completed', 'time': '08 Nov 2026, 09:23 UTC', 'datetime': '2026-11-08T09:23:00Z', 'description': 'Text extraction finished and the OCR result was queued for staff review.', 'status': 'complete'},
+  {'label': 'Verification Completed', 'time': '08 Nov 2026, 09:31 UTC', 'datetime': '2026-11-08T09:31:00Z', 'description': 'Hospital staff verified the extracted information against the source document.', 'status': 'complete'},
+  {'label': 'Consent Granted', 'time': '08 Nov 2026, 09:35 UTC', 'datetime': '2026-11-08T09:35:00Z', 'description': 'Patient consent was recorded for hospital access on Avalanche Fuji.', 'status': 'complete'},
+  {'label': 'Hospital Access', 'time': '08 Nov 2026, 10:02 UTC', 'datetime': '2026-11-08T10:02:00Z', 'description': 'Authorized hospital staff opened this record while consent was active.', 'status': 'complete'}
+] %}
+
+{% set labs = lab_results if lab_results is defined and lab_results else fallback_labs %}
+{% set events = audit_events if audit_events is defined and audit_events else fallback_events %}
+
+<!DOCTYPE html>
+<html lang="en" data-theme="classic-royal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MediLink hospital portal — view a patient medical record shared under active consent.">
+  <title>MediLink | Record Details</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="theme-classic-royal staff-portal record-page">
+
+  <header class="top-bar top-bar--staff" role="banner">
+    <div class="container top-bar__inner">
+      <div class="top-bar__brand">
+        <a href="{{ url_for('hospital') }}" class="top-bar__logo-link" aria-label="MediLink Hospital Portal">
+          <span class="top-bar__logo-text">MediLink</span>
+        </a>
+        <span class="top-bar__portal-badge top-bar__portal-badge--staff">Hospital Portal</span>
+      </div>
+
+      <nav class="top-bar__actions" aria-label="Record navigation and wallet status">
+        <a href="{{ url_for('hospital') }}" class="btn btn-secondary btn-sm" id="back-btn">Back</a>
+        <span class="top-bar__portal-badge" id="wallet-status" role="status">{{ wallet_state }}</span>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content" class="staff-main record-main">
+
+    <section class="section record-hero" aria-labelledby="record-heading">
+      <div class="container">
+        <p class="record-eyebrow">Shared Medical Record</p>
+        <h1 id="record-heading" class="section-title section-title--page">Record Details</h1>
+        <p class="section-intro section-intro--left">
+          This record has been shared by the patient through active consent. Review the record
+          summary, laboratory results, OCR information and blockchain consent evidence below.
+        </p>
+
+        <div class="record-status-row" aria-label="Record status summary">
+          <span class="record-badge record-badge--success">Consent {{ consent_state }}</span>
+          <span class="record-badge record-badge--success">OCR {{ ocr_state }}</span>
+          <span class="record-badge record-badge--success">Verification {{ verification_state }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section record-overview-section" aria-label="Record and patient information">
+      <div class="container">
+        <div class="cards-grid cards-grid--2">
+
+          <article class="card record-card" aria-labelledby="overview-heading">
+            <h2 id="overview-heading" class="card__title">Record Overview</h2>
+
+            <dl class="detail-list">
+              <div class="detail-list__item">
+                <dt>Record ID</dt>
+                <dd><span id="record-id">{{ record_ref }}</span></dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Record Type</dt>
+                <dd>{{ record_kind }}</dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Uploaded Date</dt>
+                <dd>{{ uploaded_on }}</dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>OCR Status</dt>
+                <dd>
+                  <span class="record-badge record-badge--success" id="ocr-status" role="status">{{ ocr_state }}</span>
+                </dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Verification Status</dt>
+                <dd>
+                  <span class="record-badge record-badge--success" id="verification-status" role="status">{{ verification_state }}</span>
+                </dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="card record-card" aria-labelledby="patient-heading">
+            <h2 id="patient-heading" class="card__title">Patient Information</h2>
+
+            <dl class="detail-list">
+              <div class="detail-list__item">
+                <dt>Patient Identifier</dt>
+                <dd id="patient-identifier">{{ patient_ref }}</dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Referral Number</dt>
+                <dd id="referral-number">{{ referral_ref }}</dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Age Range</dt>
+                <dd id="age-range">{{ age_band }}</dd>
+              </div>
+              <div class="detail-list__item">
+                <dt>Shared Date</dt>
+                <dd id="shared-date">{{ shared_on }}</dd>
+              </div>
+            </dl>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="section record-labs-section" aria-labelledby="labs-heading">
+      <div class="container">
+        <article class="card record-card">
+          <div class="card-heading">
+            <h2 id="labs-heading" class="card__title">Laboratory Results</h2>
+            <p class="card__desc">
+              Results are displayed exactly as extracted and verified. Always confirm critical
+              values against the source document before clinical use.
+            </p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table record-table" id="record-table">
+              <caption class="sr-only">Laboratory results for record {{ record_ref }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Test Name</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Unit</th>
+                  <th scope="col">Reference Range</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for test in labs %}
+                  {% set test_status = test.status|default('Normal') %}
+                  <tr>
+                    <td>{{ test.test_name|default(test.name|default('—')) }}</td>
+                    <td>{{ test.result|default(test.result_value|default('—')) }}</td>
+                    <td>{{ test.unit|default('—') }}</td>
+                    <td>{{ test.reference_range|default('—') }}</td>
+                    <td>
+                      <span class="record-badge record-badge--{{ test_status|lower|replace(' ', '-') }}">
+                        {{ test_status }}
+                      </span>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td colspan="5" class="empty-cell">No laboratory results are available for this record.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section record-ocr-section" aria-labelledby="ocr-heading">
+      <div class="container">
+        <article class="card record-card">
+          <h2 id="ocr-heading" class="card__title">OCR Information</h2>
+
+          <dl class="detail-list detail-list--inline">
+            <div class="detail-list__item">
+              <dt>OCR Extraction Time</dt>
+              <dd id="ocr-extraction-time">{{ ocr_time }}</dd>
+            </div>
+            <div class="detail-list__item">
+              <dt>OCR Confidence</dt>
+              <dd>
+                <span class="record-badge record-badge--info" id="ocr-confidence">{{ ocr_confidence }}</span>
+              </dd>
+            </div>
+          </dl>
+
+          <h3 class="record-subheading">Extracted Text Preview</h3>
+          <pre class="ocr-preview" id="ocr-text-preview">{{ ocr_text }}</pre>
+          <p class="result-note">
+            OCR output is a machine-generated draft. Staff must verify every value before relying on it.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section record-consent-section" aria-labelledby="consent-heading">
+      <div class="container">
+        <article class="card record-card">
+          <h2 id="consent-heading" class="card__title">Blockchain Consent</h2>
+          <p class="card__desc">
+            On-chain data proves consent state and access metadata. Medical record content is not
+            stored on the blockchain.
+          </p>
+
+          <dl class="detail-list">
+            <div class="detail-list__item">
+              <dt>Consent Status</dt>
+              <dd>
+                <span class="status-value status-value--verified" id="consent-status" role="status">
+                  {{ consent_state }}
+                </span>
+              </dd>
+            </div>
+            <div class="detail-list__item">
+              <dt>Contract Address</dt>
+              <dd><code class="mono" id="contract-address">{{ contract_ref }}</code></dd>
+            </div>
+            <div class="detail-list__item">
+              <dt>Transaction Hash</dt>
+              <dd><code class="tx-hash" id="tx-hash">{{ transaction_ref }}</code></dd>
+            </div>
+          </dl>
+
+          <div class="record-actions">
+            <button type="button" class="btn btn-primary" id="verify-consent-btn">
+              Verify Consent
+            </button>
+            <a href="https://testnet.snowtrace.io/tx/{{ transaction_ref }}"
+               class="btn btn-outline"
+               id="view-transaction-btn"
+               target="_blank"
+               rel="noopener noreferrer">
+              View Transaction
+            </a>
+          </div>
+
+          <p class="consent-hint">
+            Network: Avalanche Fuji Testnet (chain ID 43113). Verification is performed against
+            the Consent smart contract before access is granted.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section record-audit-section" aria-labelledby="audit-heading">
+      <div class="container">
+        <article class="card record-card">
+          <h2 id="audit-heading" class="card__title">Access Audit Timeline</h2>
+          <p class="card__desc">
+            Every access event is recorded to maintain a transparent, patient-controlled audit trail.
+          </p>
+
+          <ol class="audit-timeline" id="audit-timeline">
+            {% for event in events %}
+              <li class="audit-event audit-event--{{ event.status|default('complete') }}">
+                <span class="audit-event__marker" aria-hidden="true"></span>
+                <div class="audit-event__content">
+                  <div class="audit-event__head">
+                    <h3 class="audit-event__title">{{ event.label|default('Audit Event') }}</h3>
+                    <time class="audit-event__time" datetime="{{ event.datetime|default('') }}">
+                      {{ event.time|default('—') }}
+                    </time>
+                  </div>
+                  <p class="audit-event__desc">{{ event.description|default('') }}</p>
+                </div>
+              </li>
+            {% else %}
+              <li class="audit-event audit-event--pending">
+                <span class="audit-event__marker" aria-hidden="true"></span>
+                <div class="audit-event__content">
+                  <h3 class="audit-event__title">No audit events recorded</h3>
+                  <p class="audit-event__desc">Audit events will appear here once activity is logged.</p>
+                </div>
+              </li>
+            {% endfor %}
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section class="section security-section" aria-labelledby="security-heading">
+      <div class="container">
+        <aside class="security-notice" id="security-notice" role="note">
+          <h2 id="security-heading">Security Notice</h2>
+          <p>This record remains under patient control and can only be accessed while consent is active.</p>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer site-footer--staff">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="footer-logo-text">MediLink</span>
+        <p class="footer-tagline">Hospital Portal · Consent-controlled access</p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer">
+        <a href="#security-notice">Security</a>
+        <a href="{{ url_for('hospital') }}">Hospital Portal</a>
+      </nav>
+
+      <p class="footer-disclaimer">
+        MediLink is a prototype. Only authorized hospital staff may access records. Sensitive
+        medical information is never written to the blockchain.
+      </p>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

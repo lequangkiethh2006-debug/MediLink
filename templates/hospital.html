@@ -69,17 +69,13 @@
           </button>
         </div>
 
-        {% if logout_endpoint is defined %}
-          <a href="{{ url_for(logout_endpoint) }}" class="btn btn-outline btn-sm">
+        <form method="post" action="{{ url_for(logout_endpoint|default('logout')) }}" class="logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline btn-sm">
             <span class="lang-vi">Đăng xuất</span>
             <span class="lang-en">Logout</span>
-          </a>
-        {% else %}
-          <a href="{{ url_for('login') }}" class="btn btn-outline btn-sm">
-            <span class="lang-vi">Đăng xuất / Đăng nhập</span>
-            <span class="lang-en">Logout / Login</span>
-          </a>
-        {% endif %}
+          </button>
+        </form>
       </div>
     </div>
   </div>
@@ -273,6 +269,8 @@
 
         <div class="card sbar-panel">
           <form id="sbar-form" class="sbar-form" novalidate>
+            <input type="hidden" id="sbar-csrf-token" value="{{ csrf_token() }}">
+            <input type="hidden" id="sbar-handover-id" name="handover_id" value="">
             <!-- Meta -->
             <div class="form-row sbar-meta">
               <div class="form-group">
@@ -393,17 +391,17 @@
             </div>
           </form>
 
-          <!-- Handover history (placeholder) -->
+          <!-- Handover history -->
           <div class="sbar-history" id="sbar-history">
-            <h3 class="sbar-history__title">
+            <h3 id="sbar-history-title" class="sbar-history__title">
               <span class="lang-vi">Lịch sử bàn giao</span>
               <span class="lang-en">Handover history</span>
             </h3>
             <div class="table-wrap">
-              <table class="data-table" aria-describedby="sbar-history-empty">
+              <table class="data-table" aria-describedby="sbar-history-title">
                 <thead>
                   <tr>
-                    <th><span class="lang-vi">Mã ca</span><span class="lang-en">Case ref</span></th>
+                    <th><span class="lang-vi">Mã bàn giao</span><span class="lang-en">Handover ID</span></th>
                     <th><span class="lang-vi">Thời gian</span><span class="lang-en">Time</span></th>
                     <th><span class="lang-vi">Vai trò</span><span class="lang-en">Role</span></th>
                     <th><span class="lang-vi">Trạng thái</span><span class="lang-en">Status</span></th>
@@ -528,28 +526,219 @@
             </p>
           </div>
 
-          <!-- Populated only after successful authorization – structure ready for backend data -->
+          <!--
+            Populated only after successful authorization.
+            The hidden attribute must remain until consent/authorization is active.
+          -->
           <div id="packet-content" class="packet-content" hidden>
             <div class="packet-meta">
               <span class="packet-scope" id="packet-scope"></span>
               <span class="packet-expiry" id="packet-expiry"></span>
             </div>
+
             <div class="packet-sections">
+              <!-- Record overview -->
+              <section class="packet-block" aria-labelledby="packet-overview-heading">
+                <h3 id="packet-overview-heading">
+                  <span class="lang-vi">Tổng quan hồ sơ</span>
+                  <span class="lang-en">Record Overview</span>
+                </h3>
+
+                <dl class="audit-status-list">
+                  <div class="audit-item">
+                    <dt><span class="lang-vi">Mã hồ sơ</span><span class="lang-en">Record ID</span></dt>
+                    <dd id="packet-record-id">—</dd>
+                  </div>
+                  <div class="audit-item">
+                    <dt><span class="lang-vi">Loại hồ sơ</span><span class="lang-en">Record Type</span></dt>
+                    <dd id="packet-record-type">—</dd>
+                  </div>
+                  <div class="audit-item">
+                    <dt><span class="lang-vi">Trạng thái xác minh</span><span class="lang-en">Verification Status</span></dt>
+                    <dd>
+                      <span class="record-badge record-badge--pending" id="packet-verification-status">—</span>
+                    </dd>
+                  </div>
+                  <div class="audit-item">
+                    <dt><span class="lang-vi">Mã định danh bệnh nhân</span><span class="lang-en">Patient Identifier</span></dt>
+                    <dd id="packet-patient-id">—</dd>
+                  </div>
+                  <div class="audit-item">
+                    <dt><span class="lang-vi">Ngày tải lên</span><span class="lang-en">Upload Date</span></dt>
+                    <dd id="packet-upload-date">—</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <!-- Existing referral summary placeholder -->
               <section class="packet-block">
                 <h3><span class="lang-vi">Tóm tắt chuyển tuyến</span><span class="lang-en">Referral summary</span></h3>
                 <div id="packet-referral" class="packet-data"></div>
               </section>
+
+              <!-- Existing relevant history placeholder -->
               <section class="packet-block">
                 <h3><span class="lang-vi">Tiền sử liên quan</span><span class="lang-en">Relevant history</span></h3>
                 <div id="packet-history" class="packet-data"></div>
               </section>
-              <section class="packet-block">
-                <h3><span class="lang-vi">Kết quả xét nghiệm tóm tắt</span><span class="lang-en">Lab result summaries</span></h3>
-                <div id="packet-labs" class="packet-data"></div>
+
+              <!-- Laboratory results -->
+              <section class="packet-block" aria-labelledby="packet-labs-heading">
+                <h3 id="packet-labs-heading">
+                  <span class="lang-vi">Kết quả xét nghiệm</span>
+                  <span class="lang-en">Laboratory Results</span>
+                </h3>
+
+                <div id="packet-labs" class="packet-data">
+                  <div class="table-wrap">
+                    <table class="data-table" id="packet-record-table">
+                      <caption class="sr-only">Laboratory results for the shared record</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col"><span class="lang-vi">Tên xét nghiệm</span><span class="lang-en">Test Name</span></th>
+                          <th scope="col"><span class="lang-vi">Kết quả</span><span class="lang-en">Result</span></th>
+                          <th scope="col"><span class="lang-vi">Đơn vị</span><span class="lang-en">Unit</span></th>
+                          <th scope="col"><span class="lang-vi">Khoảng tham chiếu</span><span class="lang-en">Reference Range</span></th>
+                          <th scope="col"><span class="lang-vi">Trạng thái</span><span class="lang-en">Status</span></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colspan="5" class="empty-cell">
+                            <span class="lang-vi">Kết quả xét nghiệm sẽ hiển thị sau khi đồng thuận được xác minh.</span>
+                            <span class="lang-en">Laboratory results will appear after consent is verified.</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </section>
-              <section class="packet-block">
-                <h3><span class="lang-vi">Trạng thái đồng thuận</span><span class="lang-en">Consent status</span></h3>
-                <div id="packet-consent" class="packet-data"></div>
+
+              <!-- Consent status card -->
+              <section class="packet-block" aria-labelledby="packet-consent-heading">
+                <h3 id="packet-consent-heading">
+                  <span class="lang-vi">Trạng thái đồng thuận</span>
+                  <span class="lang-en">Consent Status</span>
+                </h3>
+
+                <div class="card packet-consent-card">
+                  <div class="consent-status">
+                    <span class="status-label">
+                      <span class="lang-vi">Đồng thuận:</span>
+                      <span class="lang-en">Consent status:</span>
+                    </span>
+                    <span class="status-value status-value--verified" id="packet-consent">
+                      <span class="lang-vi">Chưa tải dữ liệu</span>
+                      <span class="lang-en">Not loaded</span>
+                    </span>
+                  </div>
+
+                  <dl class="audit-status-list">
+                    <div class="audit-item">
+                      <dt><span class="lang-vi">Phạm vi</span><span class="lang-en">Scope</span></dt>
+                      <dd id="packet-consent-scope">—</dd>
+                    </div>
+                    <div class="audit-item">
+                      <dt><span class="lang-vi">Hết hạn</span><span class="lang-en">Expires</span></dt>
+                      <dd id="packet-consent-expiry">—</dd>
+                    </div>
+                  </dl>
+                </div>
+              </section>
+
+              <!-- Transaction hash -->
+              <section class="packet-block" aria-labelledby="packet-tx-heading">
+                <h3 id="packet-tx-heading">
+                  <span class="lang-vi">Mã giao dịch</span>
+                  <span class="lang-en">Transaction Hash</span>
+                </h3>
+
+                <div class="tx-status">
+                  <div class="tx-state tx-state--idle" id="packet-tx-state">
+                    <p class="tx-hash" id="packet-tx-hash">—</p>
+                    <a href="#" class="tx-explorer" id="packet-tx-link" target="_blank" rel="noopener noreferrer" hidden>
+                      <span class="lang-vi">Xem trên explorer</span>
+                      <span class="lang-en">View Transaction</span>
+                    </a>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Audit timeline -->
+              <section class="packet-block" aria-labelledby="packet-audit-heading">
+                <h3 id="packet-audit-heading">
+                  <span class="lang-vi">Dòng thời gian kiểm toán</span>
+                  <span class="lang-en">Audit Timeline</span>
+                </h3>
+
+                <ol class="audit-timeline" id="packet-audit-timeline">
+                  <li class="audit-event audit-event--complete">
+                    <span class="audit-event__marker" aria-hidden="true"></span>
+                    <div class="audit-event__content">
+                      <div class="audit-event__head">
+                        <h4 class="audit-event__title">
+                          <span class="lang-vi">Tải hồ sơ lên</span>
+                          <span class="lang-en">Record Uploaded</span>
+                        </h4>
+                        <time class="audit-event__time">—</time>
+                      </div>
+                      <p class="audit-event__desc">—</p>
+                    </div>
+                  </li>
+                  <li class="audit-event audit-event--complete">
+                    <span class="audit-event__marker" aria-hidden="true"></span>
+                    <div class="audit-event__content">
+                      <div class="audit-event__head">
+                        <h4 class="audit-event__title">
+                          <span class="lang-vi">Hoàn tất OCR</span>
+                          <span class="lang-en">OCR Completed</span>
+                        </h4>
+                        <time class="audit-event__time">—</time>
+                      </div>
+                      <p class="audit-event__desc">—</p>
+                    </div>
+                  </li>
+                  <li class="audit-event audit-event--complete">
+                    <span class="audit-event__marker" aria-hidden="true"></span>
+                    <div class="audit-event__content">
+                      <div class="audit-event__head">
+                        <h4 class="audit-event__title">
+                          <span class="lang-vi">Hoàn tất xác minh</span>
+                          <span class="lang-en">Verification Completed</span>
+                        </h4>
+                        <time class="audit-event__time">—</time>
+                      </div>
+                      <p class="audit-event__desc">—</p>
+                    </div>
+                  </li>
+                  <li class="audit-event audit-event--complete">
+                    <span class="audit-event__marker" aria-hidden="true"></span>
+                    <div class="audit-event__content">
+                      <div class="audit-event__head">
+                        <h4 class="audit-event__title">
+                          <span class="lang-vi">Đồng thuận được cấp</span>
+                          <span class="lang-en">Consent Granted</span>
+                        </h4>
+                        <time class="audit-event__time">—</time>
+                      </div>
+                      <p class="audit-event__desc">—</p>
+                    </div>
+                  </li>
+                  <li class="audit-event audit-event--complete">
+                    <span class="audit-event__marker" aria-hidden="true"></span>
+                    <div class="audit-event__content">
+                      <div class="audit-event__head">
+                        <h4 class="audit-event__title">
+                          <span class="lang-vi">Bệnh viện truy cập</span>
+                          <span class="lang-en">Hospital Access</span>
+                        </h4>
+                        <time class="audit-event__time">—</time>
+                      </div>
+                      <p class="audit-event__desc">—</p>
+                    </div>
+                  </li>
+                </ol>
               </section>
             </div>
           </div>

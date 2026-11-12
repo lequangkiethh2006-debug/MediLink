@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="MediLink – Đăng nhập cổng bệnh nhân hoặc cổng nhân viên y tế">
-  <title>MediLink | <span class="lang-vi">Đăng nhập</span><span class="lang-en">Sign in</span></title>
+  <title>MediLink | Đăng nhập / Sign in</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -264,39 +264,22 @@
                 <p id="staff-identifier-error" class="field-error" hidden></p>
               </div>
 
-              <form id="form-staff" class="login-form" method="POST" action="{{ url_for('login') }}" novalidate>
-  <!-- Bắt buộc phải có trường ẩn này để backend phân biệt loại đăng nhập -->
-  <input type="hidden" name="login_type" value="staff">
-
-  <div class="form-group">
-    <label for="staff-identifier">
-      <span class="lang-vi">Mã nhân viên / Tài khoản</span>
-      <span class="lang-en">Staff ID / Account</span>
-    </label>
-    <!-- Bắt buộc phải có name="identifier" -->
-    <input type="text" id="staff-identifier" name="identifier" required>
-  </div>
-
-  <!-- Phần nhập mật khẩu và chọn role mà bạn vừa gửi nằm ở đây -->
-  <div class="form-group">
-    <label for="staff-password">...</label>
-    <div class="password-wrap">
-      <input type="password" id="staff-password" name="password" required>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label for="staff-role">...</label>
-    <select id="staff-role" name="role">...</select>
-  </div>
-
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary btn-block" id="btn-staff-submit">
-      <span class="lang-vi">Đăng nhập nhân viên</span>
-      <span class="lang-en">Staff sign in</span>
-    </button>
-  </div>
-</form>
+              <div class="form-group">
+                <label for="staff-password">
+                  <span class="lang-vi">Mật khẩu</span>
+                  <span class="lang-en">Password</span>
+                </label>
+                <div class="password-wrap">
+                  <input type="password"
+                         id="staff-password"
+                         name="password"
+                         autocomplete="current-password"
+                         maxlength="128"
+                         required
+                         aria-describedby="staff-password-error">
+                </div>
+                <p id="staff-password-error" class="field-error" hidden></p>
+              </div>
 
               <div class="form-group">
                 <label for="staff-role">
@@ -304,26 +287,11 @@
                   <span class="lang-en">Role (optional – backend must still validate)</span>
                 </label>
                 <select id="staff-role" name="role">
-                  <option value="">
-                    <span class="lang-vi">— Không chọn —</span>
-                    <span class="lang-en">— None —</span>
-                  </option>
-                  <option value="shift-lead">
-                    <span class="lang-vi">Bác sĩ trưởng ca</span>
-                    <span class="lang-en">Shift-leading physician</span>
-                  </option>
-                  <option value="treating">
-                    <span class="lang-vi">Bác sĩ điều trị</span>
-                    <span class="lang-en">Treating physician</span>
-                  </option>
-                  <option value="nurse">
-                    <span class="lang-vi">Điều dưỡng</span>
-                    <span class="lang-en">Nurse</span>
-                  </option>
-                  <option value="referral">
-                    <span class="lang-vi">Nhân viên chuyển tuyến</span>
-                    <span class="lang-en">Authorized referral staff</span>
-                  </option>
+                  <option value="">— Không chọn / None —</option>
+                  <option value="shift-lead">Bác sĩ trưởng ca / Shift-leading physician</option>
+                  <option value="treating">Bác sĩ điều trị / Treating physician</option>
+                  <option value="nurse">Điều dưỡng / Nurse</option>
+                  <option value="referral">Nhân viên chuyển tuyến / Authorized referral staff</option>
                 </select>
               </div>
 
