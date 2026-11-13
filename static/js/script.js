@@ -266,11 +266,33 @@
     const clearBtn = $('#btn-clear-doc');
     const status = $('#doc-status');
     const result = $('#doc-result');
+    const resultContent = $('#doc-result-content');
     if (!exists(input)) return;
+
+    const runBtn = document.createElement('button');
+    runBtn.type = 'button';
+    runBtn.id = 'btn-run-ocr';
+    runBtn.className = 'btn btn-primary';
+    runBtn.append(
+      Object.assign(document.createElement('span'), {
+        className: 'lang-vi',
+        textContent: 'Chạy OCR',
+      }),
+      Object.assign(document.createElement('span'), {
+        className: 'lang-en',
+        textContent: 'Run OCR',
+      })
+    );
+    if (exists(clearBtn) && clearBtn.parentElement) {
+      clearBtn.parentElement.insertBefore(runBtn, clearBtn);
+    } else {
+      input.insertAdjacentElement('afterend', runBtn);
+    }
 
     function resetOcr() {
       input.value = '';
       if (exists(previewContent)) previewContent.innerHTML = '';
+      if (exists(resultContent)) resultContent.replaceChildren();
       setHidden(preview, true);
       setHidden(status, true);
       setHidden(result, true);
@@ -286,13 +308,13 @@
 
       // Client-side checks only — server must re-validate
       if (file.size > OCR_MAX_BYTES) {
+        resetOcr();
         showStatus(
           status,
           'Tệp vượt quá 10 MB. Vui lòng chọn tệp nhỏ hơn.',
           'File exceeds 10 MB. Please choose a smaller file.',
           'error'
         );
-        resetOcr();
         return;
       }
 
@@ -300,19 +322,20 @@
         OCR_ACCEPT.includes(file.type) ||
         /\.(pdf|jpe?g|png)$/i.test(file.name);
       if (!typeOk) {
+        resetOcr();
         showStatus(
           status,
           'Định dạng không hỗ trợ. Chỉ nhận PDF, JPG, PNG.',
           'Unsupported format. Only PDF, JPG, PNG are accepted.',
           'error'
         );
-        resetOcr();
         return;
       }
 
       disableBtn(clearBtn, false);
       setHidden(status, true);
       setHidden(result, true);
+      if (exists(resultContent)) resultContent.replaceChildren();
 
       // Local image preview only
       if (file.type.startsWith('image/') && exists(previewContent)) {
@@ -332,13 +355,115 @@
         setHidden(preview, false);
       }
 
-      // No automatic upload — backend route not assumed
       showStatus(
         status,
-        'Tệp đã sẵn sàng. OCR sẽ chạy khi backend được kết nối (prototype).',
-        'File ready. OCR will run when the backend is connected (prototype).',
+        'Tệp đã sẵn sàng. Nhấn “Chạy OCR” để trích xuất văn bản.',
+        'File ready. Select “Run OCR” to extract text.',
         'idle'
       );
+    });
+
+    runBtn.addEventListener('click', async () => {
+      const file = input.files && input.files[0];
+      if (!file) {
+        setHidden(result, true);
+        showStatus(
+          status,
+          'Vui lòng chọn tệp trước khi chạy OCR.',
+          'Please select a file before running OCR.',
+          'error'
+        );
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('document', file);
+      disableBtn(runBtn, true);
+      showStatus(
+        status,
+        'Đang tải tài liệu lên và chạy OCR…',
+        'Uploading document and running OCR…',
+        'processing'
+      );
+      setHidden(result, true);
+      if (exists(resultContent)) resultContent.replaceChildren();
+
+      try {
+        const response = await fetch('/api/ocr', {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+          throw new Error('AUTH_REQUIRED');
+        }
+        if (!response.ok || !payload || payload.success !== true) {
+          throw new Error(
+            (payload && payload.error_code) || 'OCR_FAILED'
+          );
+        }
+
+        const data = payload.data || {};
+        const extracted = typeof data.extracted === 'string'
+          ? data.extracted
+          : '';
+        if (!extracted.trim()) {
+          throw new Error('OCR_FAILED');
+        }
+
+        if (exists(resultContent)) {
+          const heading = document.createElement('h4');
+          heading.textContent = 'Recognized text';
+          const text = document.createElement('pre');
+          text.textContent = extracted;
+          resultContent.append(heading, text);
+
+          if (data.structured) {
+            const detailsHeading = document.createElement('h4');
+            detailsHeading.textContent = 'Extracted fields (verify against the original)';
+            const details = document.createElement('pre');
+            details.textContent = JSON.stringify(data.structured, null, 2);
+            resultContent.append(detailsHeading, details);
+          }
+        }
+
+        setHidden(result, false);
+        showStatus(
+          status,
+          'OCR hoàn tất. Vui lòng đối chiếu văn bản với tài liệu gốc.',
+          'OCR complete. Please verify the text against the original document.',
+          'success'
+        );
+      } catch (error) {
+        const code = error instanceof Error ? error.message : 'OCR_FAILED';
+        const messages = {
+          AUTH_REQUIRED: [
+            'Vui lòng đăng nhập để sử dụng OCR.',
+            'Please sign in to use OCR.',
+          ],
+          OCR_FAILED: [
+            'Không thể xử lý tài liệu bằng OCR. Vui lòng thử lại.',
+            'OCR could not process the document. Please try again.',
+          ],
+          OCR_NO_TEXT: [
+            'Không tìm thấy văn bản đọc được trong tài liệu.',
+            'No readable text was found in the document.',
+          ],
+          PDF_NOT_SUPPORTED: [
+            'Backend hiện chưa hỗ trợ PDF. Vui lòng chọn JPG hoặc PNG.',
+            'The backend does not support PDF yet. Please choose a JPG or PNG.',
+          ],
+        };
+        const message = messages[code] || [
+          'Tải lên hoặc xử lý tài liệu thất bại. Vui lòng thử lại.',
+          'The upload or document processing failed. Please try again.',
+        ];
+        setHidden(result, true);
+        showStatus(status, message[0], message[1], 'error');
+      } finally {
+        disableBtn(runBtn, false);
+      }
     });
 
     if (exists(clearBtn)) {
