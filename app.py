@@ -52,6 +52,12 @@ pytesseract.pytesseract.tesseract_cmd = (
 
 load_dotenv()
 
+CONSENT_CONTRACT_ADDRESS = os.getenv("CONSENT_CONTRACT_ADDRESS", "").strip()
+AVALANCHE_CHAIN_ID = int(os.getenv("AVALANCHE_CHAIN_ID", "43113"))
+AVALANCHE_NETWORK = os.getenv(
+    "AVALANCHE_NETWORK", "Avalanche Fuji Testnet"
+).strip()
+
 app = Flask(__name__)
 
 # Secret key — never hard-code a production value
@@ -74,6 +80,16 @@ app.config.update(
         str(Path(app.instance_path) / "medilink.sqlite3"),
     ),
 )
+
+
+@app.context_processor
+def blockchain_template_config():
+    return {
+        "CONSENT_CONTRACT_ADDRESS": CONSENT_CONTRACT_ADDRESS,
+        "AVALANCHE_CHAIN_ID": AVALANCHE_CHAIN_ID,
+        "AVALANCHE_NETWORK": AVALANCHE_NETWORK,
+    }
+
 
 # Ensure upload directory exists and is outside static/
 UPLOAD_DIR = Path(app.config["UPLOAD_FOLDER"])
@@ -623,10 +639,7 @@ _CONSENT_STORE = {}
 
 _DEMO_RECORD_ID = "REC-DEMO-001"
 _DEMO_CONSENT_TOKEN = "demo-consent-token"
-_DEMO_CONTRACT_ADDRESS = (
-    os.getenv("CONSENT_CONTRACT_ADDRESS")
-    or "0x7A3f9C2bD4e5F6a7B8c9D0e1F2a3B4c5D6e7F8a9"
-)
+_DEMO_CONTRACT_ADDRESS = CONSENT_CONTRACT_ADDRESS
 
 _DEMO_EXTRACTED_TEXT = """PATIENT: PT-DEMO-001
 TEST DATE: 2026-11-08
@@ -777,7 +790,7 @@ def _seed_demo_record():
     record["shared_date"] = now
     record["consent_status"] = "Active"
     record["consent_token"] = _DEMO_CONSENT_TOKEN
-    record["tx_hash"] = "0x" + secrets.token_hex(32)
+    record["tx_hash"] = ""
 
     _add_audit_event(
         record,
@@ -828,7 +841,7 @@ def _create_mock_shared_record(record_id):
     record["verified_at"] = now
     record["shared_date"] = now
     record["consent_status"] = "Active"
-    record["tx_hash"] = "0x" + secrets.token_hex(32)
+    record["tx_hash"] = ""
 
     _add_audit_event(
         record,
@@ -1552,7 +1565,7 @@ def api_consent_grant():
     record["consent_status"] = "Active"
     record["consent_token"] = token
     record["shared_date"] = now
-    record["tx_hash"] = "0x" + secrets.token_hex(32)
+    record["tx_hash"] = ""
 
     _CONSENT_STORE[token] = {
         "token": token,
@@ -1741,17 +1754,17 @@ def api_blockchain_status():
     Never exposes private keys.
     """
     rpc = os.getenv("AVALANCHE_FUJI_RPC", "")
-    address = os.getenv("CONSENT_CONTRACT_ADDRESS", "")
-    configured = bool(rpc and address and address.startswith("0x"))
+    address = CONSENT_CONTRACT_ADDRESS
+    configured = bool(re.fullmatch(r"0x[0-9a-fA-F]{40}", address))
 
     return json_success(
         data={
-            "network": "Avalanche Fuji",
-            "chain_id": 43113,
+            "network": AVALANCHE_NETWORK,
+            "chain_id": AVALANCHE_CHAIN_ID,
             "rpc_configured": bool(rpc),
             "contract_configured": bool(address and address.startswith("0x")),
             "ready": configured,
-            "note": "On-chain writes are disabled until contract ABI and a secure signer are configured.",
+            "note": "Wallet interactions use the connected Fuji wallet; no private key is stored by the server.",
         }
     )
 

@@ -61,6 +61,21 @@
     btn.disabled = !!disabled;
   }
 
+  function isConsentConfigured() {
+    return !!(
+      window.MediLinkConsent &&
+      window.MediLinkConsent.getConfig().configured
+    );
+  }
+
+  function setConsentConfigWarning(el) {
+    setText(
+      el,
+      'Chưa cấu hình địa chỉ hợp đồng đồng thuận. Hãy đặt CONSENT_CONTRACT_ADDRESS trong .env.',
+      'Consent contract address is not configured. Set CONSENT_CONTRACT_ADDRESS in .env.'
+    );
+  }
+
   /* ================================================================
      2. LANGUAGE SWITCHING
      ================================================================ */
@@ -514,13 +529,20 @@
 
   function initPatientConsent() {
     const btnConnect = $('#btn-connect-wallet');
+    const btnGrant = $('#btn-grant-consent');
+    const btnRevoke = $('#btn-revoke-consent');
     const statusValue = $('#consent-status-value');
     const qrArea = $('#consent-qr-area');
+    const walletDisplay = $('#connected-wallet');
+    const contractDisplay = $('#patient-contract-address');
     const txIdle = $('#tx-state-idle');
     const txPending = $('#tx-state-pending');
     const txSuccess = $('#tx-state-success');
     const txFailed = $('#tx-state-failed');
     if (!exists(btnConnect)) return;
+
+    let connectedAddress = '';
+    const client = () => window.MediLinkConsent;
 
     function setTxState(state) {
       [txIdle, txPending, txSuccess, txFailed].forEach((el) => setHidden(el, true));
@@ -530,100 +552,155 @@
       else setHidden(txIdle, false);
     }
 
-    btnConnect.addEventListener('click', async () => {
-      // Prototype: only attempt real connection if ethereum + config exist
-      if (typeof window.ethereum === 'undefined') {
+    function showWalletError(error) {
+      const errorEl = $('#tx-error-msg');
+      if (!exists(errorEl)) return;
+      errorEl.textContent = client()
+        ? client().describeError(error)
+        : (document.body.classList.contains('lang-en-active')
+          ? 'Consent client unavailable. Reload the page and try again.'
+          : 'Không tải được tiện ích đồng thuận. Hãy tải lại trang và thử lại.');
+    }
+
+    function updateConnectedWallet(address) {
+      connectedAddress = address || '';
+      if (exists(walletDisplay)) walletDisplay.textContent = connectedAddress || '—';
+      if (!isConsentConfigured()) {
+        setConsentConfigWarning(statusValue);
         if (exists(statusValue)) {
-          setText(
-            statusValue,
-            'MetaMask chưa được cài đặt (prototype)',
-            'MetaMask not installed (prototype)'
-          );
-        }
-        setTxState('failed');
-        const errEl = $('#tx-error-msg');
-        if (exists(errEl)) {
-          errEl.textContent = document.body.classList.contains('lang-en-active')
-            ? 'Install MetaMask or use a wallet-enabled browser.'
-            : 'Cài MetaMask hoặc dùng trình duyệt hỗ trợ ví.';
+          statusValue.classList.remove('status-value--connected');
+          statusValue.classList.add('status-value--disconnected');
         }
         return;
       }
+      if (connectedAddress && exists(statusValue)) {
+        setText(statusValue, 'Ví đã kết nối', 'Wallet connected');
+        statusValue.classList.remove('status-value--disconnected');
+        statusValue.classList.add('status-value--connected');
+      } else if (exists(statusValue)) {
+        setText(statusValue, 'Chưa kết nối ví', 'Wallet not connected');
+        statusValue.classList.remove('status-value--connected');
+        statusValue.classList.add('status-value--disconnected');
+      }
+    }
 
-      disableBtn(btnConnect, true);
+    async function connectWallet() {
+      if (!client()) throw new Error('Consent client is unavailable.');
+      const connection = await client().connect();
+      updateConnectedWallet(connection.address);
+      if (exists(contractDisplay)) {
+        contractDisplay.textContent = client().getConfig().contractAddress || '—';
+      }
+      setHidden(qrArea, true);
+      return connection;
+    }
+
+    function transactionInputs() {
+      const recipient = $('#consent-recipient');
+      const recordRef = $('#consent-record-ref');
+      if (exists(recordRef) && !recordRef.value.trim()) {
+        if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
+          throw new Error('A secure random generator is required for the record reference.');
+        }
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        recordRef.value = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+      return {
+        recipient: exists(recipient) ? recipient.value.trim() : '',
+        recordRef: exists(recordRef) ? recordRef.value.trim() : '',
+      };
+    }
+
+    async function refreshPatientConsent(connection, inputs) {
+      const result = await client().getConsentStatus(
+        connection.address,
+        inputs.recipient,
+        inputs.recordRef
+      );
+      if (result.exists && result.active) {
+        setText(statusValue, 'Đồng thuận đang có hiệu lực', 'Consent is active');
+      } else if (result.exists) {
+        setText(statusValue, 'Đồng thuận đã bị thu hồi', 'Consent has been revoked');
+      } else {
+        setText(statusValue, 'Chưa tìm thấy đồng thuận', 'No consent found');
+      }
+      return result;
+    }
+
+    async function submitConsent(action) {
+      const buttons = [btnConnect, btnGrant, btnRevoke];
+      buttons.forEach((button) => disableBtn(button, true));
       setTxState('pending');
-
+      const errorEl = $('#tx-error-msg');
+      if (exists(errorEl)) errorEl.textContent = '';
       try {
-        // Request accounts — user gesture required
-        const accounts = await window.ethereum.request({
-          method: 'eth_requestAccounts',
-        });
-        if (!accounts || !accounts.length) {
-          throw new Error('No accounts');
+        const connection = await connectWallet();
+        const inputs = transactionInputs();
+        const result = action === 'grant'
+          ? await client().grantConsent(inputs.recipient, inputs.recordRef)
+          : await client().revokeConsent(inputs.recipient, inputs.recordRef);
+        const hashEl = $('#tx-hash-display');
+        const explorer = $('#tx-explorer-link');
+        if (exists(hashEl)) hashEl.textContent = result.hash;
+        if (exists(explorer)) {
+          explorer.href = result.explorerUrl;
+          setHidden(explorer, false);
         }
-
-        // Check chain (Avalanche Fuji = 43113 / 0xa869)
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        const fuji = '0xa869';
-        if (chainId !== fuji) {
-          if (exists(statusValue)) {
-            setText(
-              statusValue,
-              'Sai mạng — hãy chuyển sang Avalanche Fuji (43113)',
-              'Wrong network — switch to Avalanche Fuji (43113)'
-            );
-          }
-          // Attempt switch if wallet supports it
-          try {
-            await window.ethereum.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: fuji }],
-            });
-          } catch (switchErr) {
-            setTxState('failed');
-            const errEl = $('#tx-error-msg');
-            if (exists(errEl)) {
-              errEl.textContent = document.body.classList.contains('lang-en-active')
-                ? 'Please switch to Avalanche Fuji testnet manually.'
-                : 'Vui lòng chuyển sang Avalanche Fuji testnet thủ công.';
-            }
-            disableBtn(btnConnect, false);
-            return;
-          }
+        const current = await refreshPatientConsent(connection, inputs);
+        const expectedActive = action === 'grant';
+        if (!current.exists || current.active !== expectedActive) {
+          throw new Error('The confirmed transaction did not produce the expected consent state.');
         }
-
-        if (exists(statusValue)) {
-          setText(
-            statusValue,
-            'Ví đã kết nối (prototype — chưa ghi on-chain)',
-            'Wallet connected (prototype — no on-chain write yet)'
-          );
-          statusValue.classList.remove('status-value--disconnected');
-          statusValue.classList.add('status-value--connected');
-        }
-
-        // Do NOT show QR or success tx unless a real consent token/tx exists
-        setHidden(qrArea, true);
-        setTxState('idle');
-      } catch (err) {
+        setTxState('success');
+      } catch (error) {
         setTxState('failed');
-        if (exists(statusValue)) {
-          setText(
-            statusValue,
-            'Kết nối bị từ chối hoặc thất bại',
-            'Connection rejected or failed'
-          );
+        showWalletError(error);
+      } finally {
+        buttons.forEach((button) => disableBtn(button, false));
+      }
+    }
+
+    if (client() && exists(contractDisplay)) {
+      contractDisplay.textContent = client().getConfig().contractAddress || '—';
+    }
+    btnConnect.addEventListener('click', async () => {
+      disableBtn(btnConnect, true);
+      try {
+        const connection = await connectWallet();
+        if (!isConsentConfigured()) {
+          setTxState('idle');
+          return;
         }
-        const errEl = $('#tx-error-msg');
-        if (exists(errEl)) {
-          errEl.textContent = document.body.classList.contains('lang-en-active')
-            ? 'User rejected or wallet error.'
-            : 'Người dùng từ chối hoặc lỗi ví.';
+        const inputs = transactionInputs();
+        if (inputs.recipient && inputs.recordRef) {
+          const current = await refreshPatientConsent(connection, inputs);
+          setTxState('idle');
+          if (!current.exists) setText(statusValue, 'Chưa tìm thấy đồng thuận', 'No consent found');
+        } else {
+          setTxState('idle');
         }
+      } catch (error) {
+        setTxState('failed');
+        showWalletError(error);
       } finally {
         disableBtn(btnConnect, false);
       }
     });
+    if (exists(btnGrant)) btnGrant.addEventListener('click', () => submitConsent('grant'));
+    if (exists(btnRevoke)) btnRevoke.addEventListener('click', () => submitConsent('revoke'));
+
+    if (window.ethereum && typeof window.ethereum.on === 'function') {
+      window.ethereum.on('accountsChanged', (accounts) => {
+        updateConnectedWallet(accounts && accounts.length ? accounts[0] : '');
+        setText(statusValue, 'Chưa xác minh đồng thuận', 'Consent not verified');
+        setTxState('idle');
+      });
+      window.ethereum.on('chainChanged', () => {
+        setText(statusValue, 'Chưa xác minh đồng thuận', 'Consent not verified');
+        setTxState('idle');
+      });
+    }
   }
 
   /* ================================================================
@@ -1376,6 +1453,60 @@
     hidePacketView();
 
     try {
+      if (!window.MediLinkConsent) {
+        throw new Error('Consent client is unavailable.');
+      }
+      const connection = await window.MediLinkConsent.connect();
+      const ownerInput = $('#consent-owner-input');
+      const recordRefInput = $('#consent-record-ref-input');
+      const ownerAddress = ownerInput ? ownerInput.value.trim() : '';
+      const recordRef = recordRefInput ? recordRefInput.value.trim() : '';
+      if (!ownerAddress || !recordRef) {
+        throw new Error('Patient wallet and opaque record reference are required.');
+      }
+      if (token !== recordRef) {
+        showStatus(
+          verifyStatus,
+          'Token phải trùng với mã hồ sơ ẩn danh đã được bệnh nhân chia sẻ.',
+          'The token must match the opaque record reference shared by the patient.',
+          'error'
+        );
+        return false;
+      }
+      const chainConsent = await window.MediLinkConsent.getConsentStatus(
+        ownerAddress,
+        connection.address,
+        recordRef
+      );
+      const auditWallet = $('#audit-wallet');
+      const auditConsent = $('#audit-consent');
+      if (exists(auditWallet)) setText(auditWallet, connection.address, connection.address);
+      if (exists(auditConsent)) {
+        setText(
+          auditConsent,
+          chainConsent.active ? 'Đang có hiệu lực trên chuỗi' : 'Không có đồng thuận đang hoạt động',
+          chainConsent.active ? 'Active on-chain' : 'No active on-chain consent'
+        );
+      }
+      if (!chainConsent.exists) {
+        showStatus(
+          verifyStatus,
+          'Không tìm thấy đồng thuận trên Avalanche Fuji.',
+          'No consent was found on Avalanche Fuji.',
+          'error'
+        );
+        return false;
+      }
+      if (!chainConsent.active) {
+        showStatus(
+          verifyStatus,
+          'Đồng thuận đã bị thu hồi. Gói hồ sơ vẫn bị khóa.',
+          'Consent has been revoked. The packet remains locked.',
+          'error'
+        );
+        return false;
+      }
+
       const consent = await verifyConsent(token);
 
       if (!consent.exists) {
@@ -1418,12 +1549,17 @@
       return true;
     } catch (err) {
       hidePacketView();
+      const client = window.MediLinkConsent;
+      const messageVi = client
+        ? client.describeError(err, 'vi')
+        : 'Không thể xác minh đồng thuận trên chuỗi. Hãy thử lại.';
+      const messageEn = client
+        ? client.describeError(err, 'en')
+        : 'Unable to verify on-chain consent. Please try again.';
       showStatus(
         verifyStatus,
-        'Không thể tải hồ sơ. Vui lòng thử lại.',
-        err && err.message
-          ? err.message
-          : 'Unable to load the shared record. Please try again.',
+        messageVi,
+        messageEn,
         'error'
       );
       return false;
@@ -1532,12 +1668,197 @@
   function initAuditPanel() {
     const walletEl = $('#audit-wallet');
     if (!exists(walletEl)) return;
+    const connectBtn = $('#btn-audit-connect');
+    const contractEl = $('#audit-contract-address');
+    const txIdle = $('#audit-tx-idle');
+    const txPending = $('#audit-tx-pending');
+    const txSuccess = $('#audit-tx-success');
+    const txFailed = $('#audit-tx-failed');
 
-    // Reflect simple presence of ethereum; full connect is on patient consent button
-    if (typeof window.ethereum !== 'undefined') {
-      setText(walletEl, 'MetaMask khả dụng', 'MetaMask available');
-    } else {
-      setText(walletEl, 'Chưa kết nối / Không có ví', 'Not connected / No wallet');
+    if (window.MediLinkConsent && exists(contractEl)) {
+      contractEl.textContent =
+        window.MediLinkConsent.getConfig().contractAddress || '—';
+    }
+
+    if (!window.ethereum) {
+      setText(walletEl, 'Chưa cài MetaMask', 'MetaMask not installed');
+      return;
+    }
+    setText(walletEl, 'Chưa kết nối', 'Not connected');
+
+    if (exists(connectBtn)) {
+      connectBtn.addEventListener('click', async () => {
+        disableBtn(connectBtn, true);
+        [txIdle, txPending, txSuccess, txFailed].forEach((el) => setHidden(el, true));
+        setHidden(txPending, false);
+        try {
+          if (!window.MediLinkConsent) {
+            throw new Error('Consent client is unavailable.');
+          }
+          const connection = await window.MediLinkConsent.connect();
+          setText(walletEl, connection.address, connection.address);
+          walletEl.classList.remove('status-value--disconnected');
+          walletEl.classList.add('status-value--connected');
+          const dashboardStatus = $('#dash-blockchain-status');
+          if (isConsentConfigured()) {
+            setText(dashboardStatus, 'Đã kết nối Fuji', 'Connected to Fuji');
+          } else {
+            setConsentConfigWarning(dashboardStatus);
+          }
+          if (exists(dashboardStatus)) {
+            dashboardStatus.classList.remove('status-value--disconnected');
+            dashboardStatus.classList.add('status-value--connected');
+          }
+          setHidden(txPending, true);
+          setHidden(txIdle, false);
+        } catch (error) {
+          setHidden(txPending, true);
+          setHidden(txFailed, false);
+          const errorEl = $('#audit-tx-error');
+          if (exists(errorEl)) {
+            errorEl.textContent = window.MediLinkConsent
+              ? window.MediLinkConsent.describeError(error)
+              : (document.body.classList.contains('lang-en-active')
+                ? 'Consent client unavailable. Reload the page and try again.'
+                : 'Không tải được tiện ích đồng thuận. Hãy tải lại trang và thử lại.');
+          }
+          setText(walletEl, 'Kết nối thất bại', 'Connection failed');
+        } finally {
+          disableBtn(connectBtn, false);
+        }
+      });
+    }
+  }
+
+  function initRecordDetailsConsent() {
+    const verifyBtn = $('#verify-consent-btn');
+    if (!exists(verifyBtn)) return;
+    const statusEl = $('#consent-status');
+    const badgeEl = $('#record-consent-badge');
+    const walletEl = $('#wallet-status');
+    const contractEl = $('#contract-address');
+    const txHashEl = $('#tx-hash');
+    const txLink = $('#view-transaction-btn');
+
+    if (window.MediLinkConsent && exists(contractEl)) {
+      contractEl.textContent =
+        window.MediLinkConsent.getConfig().contractAddress || '—';
+    }
+    verifyBtn.addEventListener('click', async () => {
+      disableBtn(verifyBtn, true);
+      try {
+        if (!window.MediLinkConsent) {
+          throw new Error('Consent client is unavailable.');
+        }
+        const connection = await window.MediLinkConsent.connect();
+        const ownerInput = $('#record-consent-owner');
+        const recordRefInput = $('#record-consent-ref');
+        const owner = ownerInput ? ownerInput.value.trim() : '';
+        const recordRef = recordRefInput ? recordRefInput.value.trim() : '';
+        if (!owner || !recordRef) {
+          throw new Error('Patient wallet and opaque record reference are required.');
+        }
+        const result = await window.MediLinkConsent.getConsentStatus(
+          owner,
+          connection.address,
+          recordRef
+        );
+        if (exists(walletEl)) walletEl.textContent = connection.address;
+        const text = !result.exists
+          ? ['Không tìm thấy', 'Not found']
+          : result.active
+            ? ['Đang có hiệu lực', 'Active']
+            : ['Đã thu hồi', 'Revoked'];
+        setText(statusEl, text[0], text[1]);
+        setText(
+          badgeEl,
+          `Đồng thuận ${text[0].toLowerCase()}`,
+          `Consent ${text[1].toLowerCase()}`
+        );
+        if (exists(statusEl)) {
+          statusEl.className = result.active
+            ? 'status-value status-value--verified'
+            : 'status-value status-value--disconnected';
+        }
+      } catch (error) {
+        const client = window.MediLinkConsent;
+        const message = client
+          ? client.describeError(error)
+          : (document.body.classList.contains('lang-en-active')
+            ? 'Consent client unavailable. Reload the page and try again.'
+            : 'Không tải được tiện ích đồng thuận. Hãy tải lại trang và thử lại.');
+        if (exists(statusEl)) setText(statusEl, message, message);
+        if (exists(badgeEl)) setText(badgeEl, 'Chưa xác minh', 'Not verified');
+      } finally {
+        disableBtn(verifyBtn, false);
+      }
+    });
+
+    if (exists(txHashEl) && txHashEl.textContent.trim() === '—' && exists(txLink)) {
+      setHidden(txLink, true);
+    }
+    if (window.ethereum && typeof window.ethereum.on === 'function') {
+      window.ethereum.on('accountsChanged', () => {
+        setText(statusEl, 'Chưa xác minh', 'Not verified');
+        setText(badgeEl, 'Đồng thuận chưa xác minh', 'Consent not verified');
+      });
+      window.ethereum.on('chainChanged', () => {
+        setText(statusEl, 'Chưa xác minh', 'Not verified');
+        setText(badgeEl, 'Đồng thuận chưa xác minh', 'Consent not verified');
+      });
+    }
+  }
+
+  function initBlockchainConfiguration() {
+    if (isConsentConfigured()) return;
+
+    const patientStatus = $('#consent-status-value');
+    const grantButton = $('#btn-grant-consent');
+    const revokeButton = $('#btn-revoke-consent');
+    const auditConsent = $('#audit-consent');
+    const dashboardStatus = $('#dash-blockchain-status');
+    const verifyStatus = $('#verify-status');
+    const hospitalVerifyButton = $('#btn-verify-token');
+    const recordStatus = $('#consent-status');
+    const recordBadge = $('#record-consent-badge');
+    const recordVerifyButton = $('#verify-consent-btn');
+    const notConfigured = document.body.classList.contains('lang-en-active')
+      ? 'Not configured'
+      : 'Chưa cấu hình';
+
+    setConsentConfigWarning(patientStatus);
+    if (exists(patientStatus)) {
+      patientStatus.classList.remove('status-value--connected');
+      patientStatus.classList.add('status-value--disconnected');
+    }
+    if (exists($('#patient-contract-address'))) {
+      $('#patient-contract-address').textContent = notConfigured;
+    }
+    disableBtn(grantButton, true);
+    disableBtn(revokeButton, true);
+
+    setConsentConfigWarning(auditConsent);
+    setConsentConfigWarning(dashboardStatus);
+    if (exists($('#audit-contract-address'))) {
+      $('#audit-contract-address').textContent = notConfigured;
+    }
+    if (exists(verifyStatus)) {
+      showStatus(
+        verifyStatus,
+        'Chưa cấu hình địa chỉ hợp đồng đồng thuận. Hãy đặt CONSENT_CONTRACT_ADDRESS trong .env.',
+        'Consent contract address is not configured. Set CONSENT_CONTRACT_ADDRESS in .env.',
+        'error'
+      );
+    }
+    disableBtn(hospitalVerifyButton, true);
+
+    if (exists(recordVerifyButton)) {
+      setConsentConfigWarning(recordStatus);
+      setConsentConfigWarning(recordBadge);
+      if (exists($('#contract-address'))) {
+        $('#contract-address').textContent = notConfigured;
+      }
+      disableBtn(recordVerifyButton, true);
     }
   }
 
@@ -1557,6 +1878,8 @@
     initSbar();
     initQrScanner();
     initAuditPanel();
+    initRecordDetailsConsent();
+    initBlockchainConfiguration();
   }
 
   if (document.readyState === 'loading') {

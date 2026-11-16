@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="MediLink – Cổng nhân viên y tế: bàn giao ca SBAR, xác minh đồng thuận và gói hồ sơ số">
+  <meta name="medilink-consent-address" content="{{ CONSENT_CONTRACT_ADDRESS|default('', true) }}">
   <title>MediLink | <span class="lang-vi">Cổng nhân viên y tế</span><span class="lang-en">Healthcare Staff Portal</span></title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -478,6 +479,28 @@
                 <span class="lang-en">Verify</span>
               </button>
             </div>
+            <p class="consent-hint">
+              <span class="lang-vi">Dùng cùng mã hồ sơ ẩn danh mà bệnh nhân đã dùng khi cấp quyền trên chuỗi.</span>
+              <span class="lang-en">Use the same opaque record reference the patient used in the on-chain consent.</span>
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label for="consent-owner-input">
+              <span class="lang-vi">Địa chỉ ví bệnh nhân (chủ sở hữu)</span>
+              <span class="lang-en">Patient wallet address (consent owner)</span>
+            </label>
+            <input type="text" id="consent-owner-input" maxlength="42"
+                   autocomplete="off" placeholder="0x...">
+          </div>
+
+          <div class="form-group">
+            <label for="consent-record-ref-input">
+              <span class="lang-vi">Mã hồ sơ ẩn danh</span>
+              <span class="lang-en">Opaque record reference</span>
+            </label>
+            <input type="text" id="consent-record-ref-input" maxlength="128"
+                   autocomplete="off" placeholder="random ID or hash">
           </div>
 
           <div id="verify-status" class="status-area" role="status" aria-live="polite">
@@ -765,8 +788,8 @@
             <div class="audit-item">
               <dt><span class="lang-vi">Mạng</span><span class="lang-en">Network</span></dt>
               <dd id="audit-network">
-                <span class="lang-vi">Avalanche Fuji (prototype)</span>
-                <span class="lang-en">Avalanche Fuji (prototype)</span>
+                <span class="lang-vi">{{ AVALANCHE_NETWORK }} ({{ AVALANCHE_CHAIN_ID }})</span>
+                <span class="lang-en">{{ AVALANCHE_NETWORK }} ({{ AVALANCHE_CHAIN_ID }})</span>
               </dd>
             </div>
             <div class="audit-item">
@@ -790,7 +813,16 @@
                 <span class="lang-en">None</span>
               </dd>
             </div>
+            <div class="audit-item">
+              <dt><span class="lang-vi">Địa chỉ hợp đồng</span><span class="lang-en">Contract address</span></dt>
+              <dd><code class="mono" id="audit-contract-address">{{ CONSENT_CONTRACT_ADDRESS }}</code></dd>
+            </div>
           </dl>
+
+          <button type="button" class="btn btn-primary" id="btn-audit-connect">
+            <span class="lang-vi">Kết nối ví bệnh viện</span>
+            <span class="lang-en">Connect hospital wallet</span>
+          </button>
 
           <div id="audit-tx" class="tx-status" role="status" aria-live="polite">
             <div class="tx-state tx-state--idle" id="audit-tx-idle">
@@ -896,6 +928,8 @@
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/consent-client.js') }}"></script>
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

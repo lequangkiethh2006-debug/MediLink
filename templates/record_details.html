@@ -18,9 +18,9 @@ White Blood Cells  7.2  10^9/L   4.0 - 11.0
 Platelets          248  10^9/L   150 - 400
 Fasting Glucose    92   mg/dL    70 - 99
 Creatinine         0.9  mg/dL    0.6 - 1.2') %}
-{% set consent_state = consent_status|default('Active') %}
-{% set contract_ref = contract_address|default('0x7A3f9C2bD4e5F6a7B8c9D0e1F2a3B4c5D6e7F8a9') %}
-{% set transaction_ref = tx_hash|default('0x9b1c4e7a2d5f8b3c6e9a1d4f7b0c3e6a8d2f5b7c9e1a4d6f8b0c3e5a7d9f1b2c') %}
+{% set consent_state = 'Not verified' %}
+{% set contract_ref = CONSENT_CONTRACT_ADDRESS %}
+{% set transaction_ref = tx_hash|default('') %}
 {% set wallet_state = wallet_status|default('Wallet: Not connected') %}
 
 {% set fallback_labs = [
@@ -48,6 +48,7 @@ Creatinine         0.9  mg/dL    0.6 - 1.2') %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="MediLink hospital portal — view a patient medical record shared under active consent.">
+  <meta name="medilink-consent-address" content="{{ CONSENT_CONTRACT_ADDRESS|default('', true) }}">
   <title>MediLink | Record Details</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -86,7 +87,7 @@ Creatinine         0.9  mg/dL    0.6 - 1.2') %}
         </p>
 
         <div class="record-status-row" aria-label="Record status summary">
-          <span class="record-badge record-badge--success">Consent {{ consent_state }}</span>
+          <span class="record-badge record-badge--success" id="record-consent-badge">Consent {{ consent_state }}</span>
           <span class="record-badge record-badge--success">OCR {{ ocr_state }}</span>
           <span class="record-badge record-badge--success">Verification {{ verification_state }}</span>
         </div>
@@ -255,19 +256,31 @@ Creatinine         0.9  mg/dL    0.6 - 1.2') %}
             </div>
             <div class="detail-list__item">
               <dt>Transaction Hash</dt>
-              <dd><code class="tx-hash" id="tx-hash">{{ transaction_ref }}</code></dd>
+              <dd><code class="tx-hash" id="tx-hash">{{ transaction_ref or '—' }}</code></dd>
             </div>
           </dl>
+
+          <div class="form-group">
+            <label for="record-consent-owner">Patient wallet address (consent owner)</label>
+            <input type="text" id="record-consent-owner" maxlength="42"
+                   autocomplete="off" placeholder="0x...">
+          </div>
+          <div class="form-group">
+            <label for="record-consent-ref">Opaque record reference</label>
+            <input type="text" id="record-consent-ref" maxlength="128"
+                   autocomplete="off" placeholder="random ID or hash">
+          </div>
 
           <div class="record-actions">
             <button type="button" class="btn btn-primary" id="verify-consent-btn">
               Verify Consent
             </button>
-            <a href="https://testnet.snowtrace.io/tx/{{ transaction_ref }}"
+            <a href="{{ 'https://testnet.snowtrace.io/tx/' ~ transaction_ref if transaction_ref else '#' }}"
                class="btn btn-outline"
                id="view-transaction-btn"
                target="_blank"
-               rel="noopener noreferrer">
+               rel="noopener noreferrer"
+               {% if not transaction_ref %}hidden{% endif %}>
               View Transaction
             </a>
           </div>
@@ -346,6 +359,8 @@ Creatinine         0.9  mg/dL    0.6 - 1.2') %}
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/consent-client.js') }}"></script>
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="MediLink – Cổng thông tin y tế số, điều phối chuyển tuyến thông minh và minh bạch quyền truy cập dữ liệu">
+  <meta name="medilink-consent-address" content="{{ CONSENT_CONTRACT_ADDRESS|default('', true) }}">
   <title>MediLink | <span class="lang-vi">Cổng bệnh nhân</span><span class="lang-en">Patient Portal</span></title>
 
   <!-- Fonts: Merriweather (headings) + Plus Jakarta Sans (body) -->
@@ -432,15 +433,49 @@
             </span>
           </div>
 
-          <!-- Connect / Grant button -->
+          <dl class="detail-list">
+            <div class="detail-list__item">
+              <dt><span class="lang-vi">Ví đã kết nối</span><span class="lang-en">Connected wallet</span></dt>
+              <dd><code class="mono" id="connected-wallet">—</code></dd>
+            </div>
+            <div class="detail-list__item">
+              <dt><span class="lang-vi">Địa chỉ hợp đồng</span><span class="lang-en">Contract address</span></dt>
+              <dd><code class="mono" id="patient-contract-address">{{ CONSENT_CONTRACT_ADDRESS }}</code></dd>
+            </div>
+          </dl>
+
           <div class="consent-actions">
+            <div class="form-group">
+              <label for="consent-recipient">
+                <span class="lang-vi">Địa chỉ ví bệnh viện</span>
+                <span class="lang-en">Hospital wallet address</span>
+              </label>
+              <input type="text" id="consent-recipient" maxlength="42"
+                     autocomplete="off" placeholder="0x...">
+            </div>
+            <div class="form-group">
+              <label for="consent-record-ref">
+                <span class="lang-vi">Mã hồ sơ ẩn danh (không nhập dữ liệu bệnh nhân)</span>
+                <span class="lang-en">Opaque record reference (never enter patient data)</span>
+              </label>
+              <input type="text" id="consent-record-ref" maxlength="128"
+                     autocomplete="off" placeholder="random ID or hash">
+            </div>
             <button type="button" id="btn-connect-wallet" class="btn btn-primary btn-glow">
-              <span class="lang-vi">Kết nối MetaMask / Cấp quyền</span>
-              <span class="lang-en">Connect MetaMask / Grant access</span>
+              <span class="lang-vi">Kết nối ví</span>
+              <span class="lang-en">Connect wallet</span>
+            </button>
+            <button type="button" id="btn-grant-consent" class="btn btn-primary">
+              <span class="lang-vi">Cấp quyền đồng thuận</span>
+              <span class="lang-en">Grant consent</span>
+            </button>
+            <button type="button" id="btn-revoke-consent" class="btn btn-secondary">
+              <span class="lang-vi">Thu hồi đồng thuận</span>
+              <span class="lang-en">Revoke consent</span>
             </button>
             <p class="consent-hint">
-              <span class="lang-vi">Chỉ dùng mạng Avalanche Fuji (testnet) nếu đã cấu hình. Đây là prototype.</span>
-              <span class="lang-en">Use Avalanche Fuji (testnet) only if configured. This is a prototype.</span>
+              <span class="lang-vi">Giao dịch đồng thuận được gửi lên Avalanche Fuji. Chỉ dùng mã hồ sơ ngẫu nhiên, không chứa thông tin cá nhân.</span>
+              <span class="lang-en">Consent transactions use Avalanche Fuji. Use only a random record reference containing no personal information.</span>
             </p>
           </div>
 
@@ -570,6 +605,8 @@
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/consent-client.js') }}"></script>
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
